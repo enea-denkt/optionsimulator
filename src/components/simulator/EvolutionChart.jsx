@@ -187,6 +187,31 @@ function getHeatmapDates(expirationDate, daysToExpiration) {
   return dates;
 }
 
+const tooltipStyle = `
+  .heatmap-cell {
+    position: relative;
+  }
+  .heatmap-tooltip {
+    display: none;
+    position: absolute;
+    top: -5px;
+    left: 105%;
+    background: white;
+    color: black;
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    z-index: 20;
+  }
+  .heatmap-cell:hover .heatmap-tooltip {
+    display: block;
+  }
+`;
+
+
 export default function EvolutionChart({ data, filters, premiumPaid }) {
   const [showReturn, setShowReturn] = useState(true);
 
@@ -605,117 +630,123 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
 
   return (
     <>
-      <Card className="border-slate-200 shadow-xl mb-6">
-        <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white pb-8">
-          <CardTitle className="text-xl font-semibold text-slate-900 flex items-center gap-2">
-            <LineChartIcon className="w-5 h-5" style={{ color: '#A0CBF5' }} />
-            Net Return (%) vs Stock Price at Expiration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart margin={{ top: 20, right: 30, left: 60, bottom: 30 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="stockPrice"
-                type="number"
-                domain={['dataMin', 'dataMax']}
-                tickFormatter={(value) => `$${value.toFixed(0)}`}
-                stroke="#64748b"
-                label={{ value: 'Stock Price', position: 'insideBottom', offset: -20 }} />
+    <style>{tooltipStyle}</style>
+    <div className="w-full overflow-x-auto">
+        <Card className="border-slate-200 shadow-xl mb-6">
+          <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white pb-8">
+            <CardTitle className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+              <LineChartIcon className="w-5 h-5" style={{ color: '#A0CBF5' }} />
+              Net Return (%) vs Stock Price at Expiration
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart margin={{ top: 20, right: 30, left: 60, bottom: 30 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="stockPrice"
+                  type="number"
+                  domain={['dataMin', 'dataMax']}
+                  tickFormatter={(value) => `$${value.toFixed(0)}`}
+                  stroke="#64748b"
+                  label={{ value: 'Stock Price', position: 'insideBottom', offset: -20 }} />
 
 
-              <YAxis
-                domain={['auto', 'auto']}
-                label={{ value: 'Net Return', angle: -90, position: 'insideLeft', offset: -10 }}
-                stroke="#64748b"
-                tickFormatter={(value) => `${value}%`}
-                tick={yAxisTickStyle} />
+                <YAxis
+                  domain={['auto', 'auto']}
+                  label={{ value: 'Net Return', angle: -90, position: 'insideLeft', offset: -10 }}
+                  stroke="#64748b"
+                  tickFormatter={(value) => `${value}%`}
+                  tick={yAxisTickStyle} />
 
 
-              <Tooltip content={<PayoffTooltip />} />
-              <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" />
-              {payoffSegments.map((segment, index) =>
-                <Line
-                  key={index}
-                  data={segment.data}
-                  type="monotone"
-                  dataKey="netReturns"
-                  stroke={segment.color}
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false} />
+                <Tooltip content={<PayoffTooltip />} />
+                <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" />
+                {payoffSegments.map((segment, index) =>
+                  <Line
+                    key={index}
+                    data={segment.data}
+                    type="monotone"
+                    dataKey="netReturns"
+                    stroke={segment.color}
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false} />
 
-              )}
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
 
-      <Card className="border-slate-200 shadow-xl mb-6">
-        <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white pb-8">
-          <CardTitle className="text-xl font-semibold text-slate-900 flex items-center gap-2">
-            <LineChartIcon className="w-5 h-5" style={{ color: '#A0CBF5' }} />
-            Premium Decay if Stock Price Stays Flat
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart margin={{ top: 20, right: 30, left: 60, bottom: 30 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis
-                dataKey="daysToExpiration"
-                type="number"
-                domain={[0, 'dataMax']}
-                reversed={true}
-                tickFormatter={(value) => {
-                  if (todayForDecayChart && filters.daysToExpiration !== undefined) {
-                    const currentDisplayDate = new Date(todayForDecayChart);
-                    currentDisplayDate.setDate(todayForDecayChart.getDate() + (filters.daysToExpiration - value));
-                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                    const month = months[currentDisplayDate.getMonth()];
-                    const day = currentDisplayDate.getDate();
-                    const year = currentDisplayDate.getFullYear().toString().slice(-2);
-                    return `${month} ${day}, '${year}`;
-                  }
-                  return '';
-                }}
-                stroke="#64748b"
-                label={{ value: 'Date', position: 'insideBottom', offset: -20 }} />
+      <div className="w-full overflow-x-auto">
+        <Card className="border-slate-200 shadow-xl mb-6">
+          <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white pb-8">
+            <CardTitle className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+              <LineChartIcon className="w-5 h-5" style={{ color: '#A0CBF5' }} />
+              Premium Decay if Stock Price Stays Flat
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart margin={{ top: 20, right: 30, left: 60, bottom: 30 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="daysToExpiration"
+                  type="number"
+                  domain={[0, 'dataMax']}
+                  reversed={true}
+                  tickFormatter={(value) => {
+                    if (todayForDecayChart && filters.daysToExpiration !== undefined) {
+                      const currentDisplayDate = new Date(todayForDecayChart);
+                      currentDisplayDate.setDate(todayForDecayChart.getDate() + (filters.daysToExpiration - value));
+                      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                      const month = months[currentDisplayDate.getMonth()];
+                      const day = currentDisplayDate.getDate();
+                      const year = currentDisplayDate.getFullYear().toString().slice(-2);
+                      return `${month} ${day}, '${year}`;
+                    }
+                    return '';
+                  }}
+                  stroke="#64748b"
+                  label={{ value: 'Date', position: 'insideBottom', offset: -20 }} />
 
-              <YAxis
-                label={{ value: 'Premium', angle: -90, position: 'insideLeft', offset: 0 }}
-                stroke="#64748b"
-                tickFormatter={(value) => `$${value.toFixed(1)}`} />
+                <YAxis
+                  label={{ value: 'Premium', angle: -90, position: 'insideLeft', offset: 0 }}
+                  stroke="#64748b"
+                  tickFormatter={(value) => `$${value.toFixed(1)}`} />
 
-              <Tooltip content={<DecayTooltip />} />
-              {filters.entryPremium &&
-                <ReferenceLine
-                  y={filters.entryPremium}
-                  stroke="#94a3b8"
-                  strokeWidth={2}
-                  strokeDasharray="5 5" />
+                <Tooltip content={<DecayTooltip />} />
+                {filters.entryPremium &&
+                  <ReferenceLine
+                    y={filters.entryPremium}
+                    stroke="#94a3b8"
+                    strokeWidth={2}
+                    strokeDasharray="5 5" />
 
-              }
-              {premiumSegments.map((segment, index) =>
-                <Line
-                  key={index}
-                  data={segment.data}
-                  type="monotone"
-                  dataKey="premium"
-                  stroke={segment.color}
-                  strokeWidth={2}
-                  dot={false}
-                  connectNulls
-                  isAnimationActive={false} />
+                }
+                {premiumSegments.map((segment, index) =>
+                  <Line
+                    key={index}
+                    data={segment.data}
+                    type="monotone"
+                    dataKey="premium"
+                    stroke={segment.color}
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false} />
 
-              )}
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
 
+      <div className="w-full overflow-x-auto">            
       <Card className="border-slate-200 shadow-xl">
         <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white pb-8">
           <div className="flex items-center justify-between">
@@ -834,6 +865,7 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
                       return (
                         <div
                           key={dayIdx}
+                          className="heatmap-cell"
                           style={{
                             width: `${cellWidth}px`,
                             height: `${cellHeight}px`,
@@ -847,9 +879,16 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
                             color: '#1e293b',
                             cursor: 'pointer'
                           }}
-                          title={`Date: ${formatDateStandard(date)}, Price: $${price.toFixed(2)}, ${showReturn ? 'Return: ' + value.toFixed(1) + '%' : 'Premium: $' + value.toFixed(2)}`}>
-
+                        >
                           {showReturn ? value.toFixed(0) + '%' : '$' + value.toFixed(1)}
+
+                          {/* Tooltip */}
+                          <div className="heatmap-tooltip">
+                            <div><strong>Date:</strong> {formatDateStandard(date)}</div>
+                            <div><strong>Stock:</strong> ${price.toFixed(2)}</div>
+                            <div><strong>Premium:</strong> ${getValue(date, price).toFixed(2)}</div>
+                            <div><strong>Net Return:</strong> {value.toFixed(1)}%</div>
+                          </div>
                         </div>);
 
                     })}
@@ -876,6 +915,7 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
           </div>
         </CardContent>
       </Card>
+    </div>
     </>
   );
 }

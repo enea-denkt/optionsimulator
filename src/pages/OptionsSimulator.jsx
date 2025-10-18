@@ -191,8 +191,9 @@ export default function OptionsSimulator() {
   
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
-      <div className="bg-[#FFFFFF] mx-auto px-6 py-8 max-w-[1600px]">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 overflow-x-hidden">
+      <div className="bg-[#FFFFFF] mx-auto px-4 py-6 w-full max-w-full">
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -282,7 +283,8 @@ export default function OptionsSimulator() {
           </motion.div>
         }
 
-        <div className="grid lg:grid-cols-3 gap-6 mt-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 w-full overflow-hidden">
+
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
