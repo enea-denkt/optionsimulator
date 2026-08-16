@@ -106,6 +106,12 @@ Also worth knowing: a full chain is ~2,000–5,000 contracts. Rendering all of t
 into a combobox is unusable, so filtering and a 150-row cap live in the component,
 with cmdk's own filtering disabled (`shouldFilter={false}`).
 
+**A third, self-inflicted one:** a JSX comment (`{/* … */}`) placed directly inside
+`ReactDOM.createRoot(...).render(` is a syntax error — `render()` takes one
+expression, and `{…}` is only valid among JSX *children*. Use a plain `//` comment
+above the element instead. Vite's error overlay also persists after the fix until
+the page is reloaded, which makes a corrected file look broken.
+
 ## 7. Deployment specifics for GitHub Pages
 
 * `base` must match the repo path (`/optionsimulator/`), and the router `basename`
@@ -127,3 +133,60 @@ node 23, since `Request`/`Response`/`fetch` are all global there.
 One harness trap: the adapter initially dropped request headers, which made the
 origin allowlist look broken when it was fine. Verify the test harness before
 trusting a negative result.
+
+## 9. Deploying the worker (Cloudflare dashboard)
+
+Workers & Pages → Create → **"Start with Hello World!"**. The neighbouring options
+are both wrong for this: *Connect GitHub* tries to build the whole Vite app and
+would need a `wrangler.toml` to know that one file under `proxy/` is the worker,
+and *Upload your static files* is Cloudflare Pages, which does not run server-side
+code at all. Deploy the placeholder, then Edit code, delete the template entirely,
+paste `proxy/cloudflare-worker.js`, deploy again.
+
+Live at **https://market-proxy.enea-denkt.workers.dev**. Verified against it:
+
+| Check | Result |
+| --- | --- |
+| Allowed origin (`enea-denkt.github.io`) | 200, correct `Access-Control-Allow-Origin` |
+| Foreign origin | 403, no CORS header |
+| Path outside the allowlist | 404 |
+| CORS preflight | 204 |
+| 1.4MB option chain | 200 in 0.47s |
+| 2.3MB symbol directory | 200 in 6.5s (uncached first hit) |
+
+The symbol directory is the slow one, which is why it is fetched lazily on the
+first search and kept in memory rather than re-fetched per keystroke.
+
+## 10. Publishing, as actually performed
+
+GitHub Pages serves the **`gh-pages` branch**. Pushing source to `main` changes
+nothing on the live site — that surprise is worth remembering.
+
+The first deploy was done by building locally against the live worker and
+force-pushing `dist` to `gh-pages`, which is exactly what the workflow does. The
+Actions route additionally needs the `MARKET_PROXY` repo variable set
+(Settings → Secrets and variables → Actions → Variables); **without it the build
+silently falls back to the public proxies and the live site's data breaks.**
+
+* Deployed commit: `0585554` (built from `main` @ `a2e0767`)
+* **Rollback:** `git push -f <remote> b126d4a:gh-pages` restores the previous site
+
+**SSH gotcha:** port 22 to github.com started returning *Connection refused*
+mid-session on this machine, having worked minutes earlier. GitHub's alternate
+endpoint works and uses the same key:
+
+```bash
+git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages
+```
+
+## 11. Still open
+
+* **Cboe's terms (§4) are now being exercised in production**, not in testing. The
+  IP-block risk is real rather than theoretical; migrating to a licensed feed
+  touches only the worker's upstream and one normalizer in `marketData.js`.
+* **`MARKET_PROXY` repo variable is not set yet**, so deploys must be run locally
+  until it is.
+* **Feed cadence during market hours is still unmeasured** (§5).
+* The stock-return benchmark shares one Y axis with the option's net return. That
+  is correct — same units — but when the option returns thousands of percent the
+  stock line flattens visually. A log-scale toggle would be the fix if it matters.
