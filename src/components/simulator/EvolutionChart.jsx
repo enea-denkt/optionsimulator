@@ -309,18 +309,23 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
     for (let i = 0; i <= priceSteps; i++) {
       const stockPrice = priceMin + i * priceIncrement;
 
-      const optionValue = payoffAtExpiration(stockPrice, 
-        strikePrice, 
+      const optionValue = payoffAtExpiration(stockPrice,
+        strikePrice,
         optionType
       );
 
 
       const netReturns = baselineForReturns > 0 ? (optionValue - baselineForReturns) / baselineForReturns * 100 : 0;
 
+      // What the same move would have returned on the shares themselves,
+      // bought at today's price — the benchmark the option has to beat.
+      const stockReturns = currentPrice > 0 ? (stockPrice - currentPrice) / currentPrice * 100 : 0;
+
       payoffData.push({
         stockPrice: stockPrice,
         premium: optionValue,
         netReturns: netReturns,
+        stockReturns: stockReturns,
         daysToExpiration: 0 // Consistent property for all data points
       });
     }
@@ -476,9 +481,21 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
           <p className="text-sm text-slate-600 mb-1">
             Premium: <span className="font-semibold text-slate-900">${pointData.premium.toFixed(2)}</span>
           </p>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-600 mb-1">
             Net Return: <span className="font-semibold" style={{ color: pointData.netReturns >= 0 ? '#1DBC60' : '#FF2300' }}>{pointData.netReturns.toFixed(2)}%</span>
           </p>
+          {pointData.stockReturns !== undefined && (
+            <>
+              <p className="text-sm text-slate-600 mb-1">
+                Stock Return: <span className="font-semibold" style={{ color: pointData.stockReturns >= 0 ? '#1DBC60' : '#FF2300' }}>{pointData.stockReturns.toFixed(2)}%</span>
+              </p>
+              <p className="text-sm text-slate-600 pt-1 border-t border-slate-100">
+                Option vs Stock: <span className="font-semibold text-slate-900">
+                  {(pointData.netReturns - pointData.stockReturns > 0 ? '+' : '') + (pointData.netReturns - pointData.stockReturns).toFixed(2)} pp
+                </span>
+              </p>
+            </>
+          )}
         </div>);
 
     }
@@ -534,6 +551,7 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
               stockPrice: prevPoint.stockPrice + t * (point.stockPrice - prevPoint.stockPrice),
               premium: prevPoint.premium + t * (point.premium - prevPoint.premium),
               netReturns: 0,
+              stockReturns: prevPoint.stockReturns + t * (point.stockReturns - prevPoint.stockReturns),
               daysToExpiration: prevPoint.daysToExpiration
             };
             currentSegment.push(crossingPoint);
@@ -636,10 +654,31 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
           <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white pb-8">
             <CardTitle className="text-xl font-semibold text-slate-900 flex items-center gap-2">
               <LineChartIcon className="w-5 h-5" style={{ color: '#A0CBF5' }} />
-              Net Return (%) vs Stock Price at Expiration
+              Net Return (%) and Stock Return (%) vs Stock Price at Expiration
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6">
+            {/* Legend sits above the plot: the option line switches colour with
+                profit and loss, so it needs a two-tone swatch rather than one. */}
+            <div className="flex flex-wrap items-center gap-6 mb-4 px-2">
+              <div className="flex items-center gap-2">
+                <svg width="34" height="10" aria-hidden="true">
+                  <line x1="0" y1="5" x2="17" y2="5" stroke="#FF2300" strokeWidth="2.5" />
+                  <line x1="17" y1="5" x2="34" y2="5" stroke="#1DBC60" strokeWidth="2.5" />
+                </svg>
+                <span className="text-sm text-slate-600">
+                  Option Net Return <span className="text-slate-400">(loss / profit)</span>
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <svg width="34" height="10" aria-hidden="true">
+                  <line x1="0" y1="5" x2="34" y2="5" stroke="#2188e6" strokeWidth="2.5" strokeDasharray="5 4" />
+                </svg>
+                <span className="text-sm text-slate-600">
+                  Stock Return <span className="text-slate-400">(if you bought shares instead)</span>
+                </span>
+              </div>
+            </div>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart margin={{ top: 20, right: 30, left: 60, bottom: 30 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -662,6 +701,19 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
 
                 <Tooltip content={<PayoffTooltip />} />
                 <ReferenceLine y={0} stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" />
+
+                {/* Buy-the-shares benchmark, drawn under the option line */}
+                <Line
+                  data={payoffData}
+                  type="monotone"
+                  dataKey="stockReturns"
+                  stroke="#2188e6"
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false} />
+
                 {payoffSegments.map((segment, index) =>
                   <Line
                     key={index}
