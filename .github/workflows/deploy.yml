@@ -1,0 +1,46 @@
+name: Deploy to GitHub Pages
+
+# Manual trigger only, on purpose: the live site should not be replaced until
+# the market-data worker is deployed and MARKET_PROXY is set (see below).
+# To publish on every push to main, uncomment the `push` trigger.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # Repo variable, not a secret: it is a public URL and ends up in the
+      # bundle either way. Settings -> Secrets and variables -> Actions -> Variables.
+      # If unset, the app falls back to public CORS proxies, which are unreliable.
+      - name: Build
+        env:
+          VITE_MARKET_PROXY: ${{ vars.MARKET_PROXY }}
+        run: npm run build
+
+      - name: Publish to gh-pages
+        run: |
+          # GitHub Pages serves /assets/* fine, but .nojekyll avoids any
+          # underscore-prefixed files being skipped by Jekyll.
+          touch dist/.nojekyll
+          cd dist
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA::7}"
+          git push -f -q "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
