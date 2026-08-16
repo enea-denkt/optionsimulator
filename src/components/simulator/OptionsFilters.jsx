@@ -488,14 +488,14 @@ export default function OptionsFilters({ filters, onChange }) {
               onChange({ ...filters, daysToExpiration: value[0] });
             }}
             min={1}
-            max={730}
+            max={1095}
             step={1}
             className={`mt-2 ${isTickerMode ? 'opacity-50 pointer-events-none' : ''}`}
             disabled={isTickerMode}
           />
           <div className="flex justify-between text-xs text-slate-500">
             <span>1 day</span>
-            <span>730 days (2 years)</span>
+            <span>1095 days (3 years)</span>
           </div>
           {isTickerMode && (
             <p className="text-xs text-slate-500 italic">
