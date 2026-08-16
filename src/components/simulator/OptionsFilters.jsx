@@ -3,20 +3,27 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, RefreshCw, AlertCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch"; // Import the Switch component
-
+import TickerSearch from "./TickerSearch";
+import { fetchOptionChain, findContractQuote, formatExpiration, parseISODate } from "@/api/marketData";
 
 
 export default function OptionsFilters({ filters, onChange }) {
   const [contractOpen, setContractOpen] = useState(false);
   const [contractsData, setContractsData] = useState({});
+  const [chainMeta, setChainMeta] = useState(null);   // quote time + underlying, for the freshness line
+  const [loadingChain, setLoadingChain] = useState(false);
+  const [chainError, setChainError] = useState(null);
+  const [selectedExpiration, setSelectedExpiration] = useState(null); // ISO date of the picked contract
+  const [selectedQuote, setSelectedQuote] = useState(null);           // its live bid / ask / last
+  const [contractQuery, setContractQuery] = useState('');
 
 
   // Local state for input fields to manage cursor position
@@ -49,73 +56,122 @@ export default function OptionsFilters({ filters, onChange }) {
   }, [filters.riskFreeRate]);
 
 
-  const handleTickerChange = async (ticker) => {
-      // Reset filters first
+  // Loads the live chain for a ticker: underlying price, every listed contract,
+  // its mark and its implied volatility. Data comes from Cboe's public
+  // delayed-quotes feed, which needs no API key (see src/api/marketData.js).
+  const loadChain = async (ticker, { force = false } = {}) => {
+    // Reset dependent fields first so stale numbers are never shown mid-load.
+    onChange({
+      ...filters,
+      ticker,
+      currentPrice: 0,
+      selectedContract: '',
+      premiumPaid: 0,
+      strikePrice: 0,
+      daysToExpiration: 90
+    });
+
+    setLoadingChain(true);
+    setChainError(null);
+
+    try {
+      const chain = await fetchOptionChain(ticker, { force });
+
+      setContractsData(chain.contracts);
+      setChainMeta({
+        quoteTime: chain.quoteTime,
+        contractCount: chain.contractCount,
+        iv30: chain.iv30
+      });
+
       onChange({
         ...filters,
         ticker,
-        currentPrice: 0,
+        currentPrice: chain.stockPrice,
         selectedContract: '',
         premiumPaid: 0,
         strikePrice: 0,
-        daysToExpiration: 90
+        daysToExpiration: 90,
+        currentIV: chain.iv30 ? Math.round(chain.iv30) : filters.currentIV,
+        priceRangeMin: chain.stockPrice * 0.8,
+        priceRangeMax: chain.stockPrice * 1.2
       });
 
-      try {
-        const res = await fetch(`/member/fetch_available_contracts_and_prices.php?symbol=${ticker}`);
-        const data = await res.json();
+      setDisplayStockPrice(chain.stockPrice.toFixed(2));
+    } catch (err) {
+      console.error("Error fetching option chain:", err);
+      setContractsData({});
+      setChainMeta(null);
+      setChainError(err.message || 'Could not load market data');
+    } finally {
+      setLoadingChain(false);
+    }
+  };
 
-        if (data && data[ticker]) {
-          setContractsData(data[ticker].contracts || {});
-          const stockPrice = data[ticker].stock_price || 0;
+  const handleTickerChange = (ticker) => loadChain(ticker);
 
-          // Update filters with stock price
-          onChange({
-            ...filters,
-            ticker,
-            currentPrice: stockPrice,
-            selectedContract: '',
-            premiumPaid: 0,
-            strikePrice: 0,
-            daysToExpiration: 90,
-            priceRangeMin: stockPrice * 0.8,
-            priceRangeMax: stockPrice * 1.2
-          });
+  // Re-pull the chain and re-price whatever contract is currently selected.
+  const handleRefreshQuotes = async () => {
+    if (!filters.ticker) return;
+    setLoadingChain(true);
+    setChainError(null);
 
-          setDisplayStockPrice(stockPrice.toFixed(2));
+    try {
+      const chain = await fetchOptionChain(filters.ticker, { force: true });
+      setContractsData(chain.contracts);
+      setChainMeta({
+        quoteTime: chain.quoteTime,
+        contractCount: chain.contractCount,
+        iv30: chain.iv30
+      });
+
+      const next = {
+        ...filters,
+        currentPrice: chain.stockPrice,
+        priceRangeMin: chain.stockPrice * 0.8,
+        priceRangeMax: chain.stockPrice * 1.2
+      };
+
+      if (selectedExpiration) {
+        const quote = findContractQuote(chain, filters.optionType, filters.strikePrice, selectedExpiration);
+        if (quote) {
+          next.premiumPaid = quote.mark;
+          if (quote.implied_volatility) next.currentIV = Math.round(quote.implied_volatility * 100);
         }
-      } catch (err) {
-        console.error("Error fetching contracts and stock price:", err);
-        setContractsData({});
       }
-    };
+
+      onChange(next);
+      setDisplayStockPrice(chain.stockPrice.toFixed(2));
+    } catch (err) {
+      console.error("Error refreshing quotes:", err);
+      setChainError(err.message || 'Could not refresh market data');
+    } finally {
+      setLoadingChain(false);
+    }
+  };
 
 
 
 
   const handleContractChange = (contractString) => {
     const [strike, expDate] = contractString.split(" - ");
-    
+
     if (!contractsData[filters.optionType]) return;
+    if (!contractsData[filters.optionType][strike]) return;
 
-    const expirations = contractsData[filters.optionType][strike];
-    if (!expirations) return;
-
-    const expirationDate = expDate;
+    // Compare dates in local time on both sides so the day never shifts by timezone.
     const today = new Date();
-    const todayDate = new Date(today.toISOString().split('T')[0]);
-    const expirationDateObj = new Date(expirationDate);
+    today.setHours(0, 0, 0, 0);
+    const expirationDateObj = parseISODate(expDate);
 
-    const diffTime = expirationDateObj - todayDate;
+    const diffTime = expirationDateObj - today;
     const daysToExp = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)));
 
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const month = months[expirationDateObj.getMonth()];
-    const day = expirationDateObj.getDate();
-    const year = expirationDateObj.getFullYear().toString().slice(-2);
-    const formattedContractString = `${strike} - ${month} ${day}, '${year}`;
-
+    const formattedContractString = `${strike} - ${formatExpiration(expDate)}`;
     const contract = availableContracts.find(c => c.value === contractString);
+
+    setSelectedExpiration(expDate);
+    setSelectedQuote(contract || null);
 
     const newFilters = {
       ...filters,
@@ -134,6 +190,8 @@ export default function OptionsFilters({ filters, onChange }) {
 
 
   const handleOptionTypeChange = (type) => {
+    setSelectedExpiration(null);
+    setSelectedQuote(null);
     onChange({
       ...filters,
       optionType: type,
@@ -189,20 +247,24 @@ export default function OptionsFilters({ filters, onChange }) {
 
     return Object.entries(contractsData[filters.optionType])
       .flatMap(([strike, contracts]) =>
-        contracts.map(({ expiration, mark, implied_volatility }) => {
-          const exp = new Date(expiration);
-          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          const formatted = `${months[exp.getMonth()]} ${exp.getDate()}, '${exp.getFullYear().toString().slice(-2)}`;
-          return {
-            label: `${strike} - ${formatted}`,       // display
-            value: `${strike} - ${expiration}`,      // internal value
-            premium: parseFloat(mark) || 0,          // premium
-            iv: implied_volatility
-              ? Math.round(parseFloat(implied_volatility) * 100) // → % with 0 decimals
-              : null
-          };
-        })
-      );
+        contracts.map(({ expiration, mark, implied_volatility, bid, ask, last, volume, openInterest }) => ({
+          label: `${strike} - ${formatExpiration(expiration)}`, // display
+          value: `${strike} - ${expiration}`,                   // internal value
+          strike: parseFloat(strike),
+          expiration,
+          premium: parseFloat(mark) || 0,                       // mid of bid/ask, else last trade
+          iv: implied_volatility
+            ? Math.round(parseFloat(implied_volatility) * 100)  // → % with 0 decimals
+            : null,
+          bid,
+          ask,
+          last,
+          volume,
+          openInterest
+        }))
+      )
+      // Nearest expiration first, then by strike — the order traders scan in.
+      .sort((a, b) => a.expiration.localeCompare(b.expiration) || a.strike - b.strike);
   };
 
 
@@ -210,6 +272,25 @@ export default function OptionsFilters({ filters, onChange }) {
 
   const availableContracts = getAvailableContracts();
   const isTickerMode = filters.simulationMode === 'ticker';
+
+  // With no search term, lead with the strikes closest to spot — the ones anyone
+  // actually trades — instead of the far wings that dominate a raw chain.
+  const CONTRACT_RENDER_LIMIT = 150;
+  const matchedContracts = (() => {
+    const query = contractQuery.trim().toLowerCase();
+    if (!query) {
+      const spot = filters.currentPrice;
+      return [...availableContracts].sort(
+        (a, b) =>
+          a.expiration.localeCompare(b.expiration) ||
+          Math.abs(a.strike - spot) - Math.abs(b.strike - spot)
+      );
+    }
+    return availableContracts.filter((c) => c.label.toLowerCase().includes(query));
+  })();
+
+  const visibleContracts = matchedContracts.slice(0, CONTRACT_RENDER_LIMIT);
+  const hiddenContractCount = matchedContracts.length - visibleContracts.length;
 
   return (
     <Card className="border-slate-200 shadow-xl">
@@ -238,48 +319,49 @@ export default function OptionsFilters({ filters, onChange }) {
 
         {/* 1. Ticker */}
         <div className="space-y-3">
-          <Label className="text-sm font-medium text-slate-700">
-            Ticker
-          </Label>
-          <Select
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium text-slate-700">
+              Ticker
+            </Label>
+            {isTickerMode && filters.ticker && (
+              <button
+                type="button"
+                onClick={handleRefreshQuotes}
+                disabled={loadingChain}
+                className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 disabled:opacity-50"
+                title="Reload live prices"
+              >
+                <RefreshCw className={`h-3 w-3 ${loadingChain ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            )}
+          </div>
+
+          <TickerSearch
             value={filters.ticker}
-            onValueChange={handleTickerChange}
+            onSelect={handleTickerChange}
             disabled={!isTickerMode}
-          >
-            <SelectTrigger className={`text-base ${!isTickerMode ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              <SelectValue placeholder="Select ticker..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectLabel>BTC Treasuries</SelectLabel>
-                {["ASST","CEP","COIN","GME","KULR","MSTR","NAKA","SMLR","SQNS","TSLA"].map((ticker) => (
-                  <SelectItem key={ticker} value={ticker}>{ticker}</SelectItem>
-                ))}
-              </SelectGroup>
+          />
 
-              <SelectGroup>
-                <SelectLabel>BTC Miners</SelectLabel>
-                {['ABTC','BITF','BTDR','CIFR','CLSK','GLXY','HIVE','HUT','IREN','MARA','RIOT'].map((ticker) => (
-                  <SelectItem key={ticker} value={ticker}>{ticker}</SelectItem>
-                ))}
-              </SelectGroup>
+          {isTickerMode && loadingChain && (
+            <p className="flex items-center gap-2 text-xs text-slate-500">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading live option chain...
+            </p>
+          )}
 
-              <SelectGroup>
-                <SelectLabel>Preferred Stocks</SelectLabel>
-                {["STRC","STRD","STRF"].map((ticker) => (
-                  <SelectItem key={ticker} value={ticker}>{ticker}</SelectItem>
-                ))}
-              </SelectGroup>
+          {isTickerMode && chainError && (
+            <p className="flex items-start gap-2 text-xs text-rose-600">
+              <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+              {chainError}
+            </p>
+          )}
 
-              <SelectGroup>
-                <SelectLabel>ETFs & ETPs</SelectLabel>
-                {["IBIT","MSTY"].map((ticker) => (
-                  <SelectItem key={ticker} value={ticker}>{ticker}</SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
+          {isTickerMode && !loadingChain && !chainError && chainMeta && (
+            <p className="text-xs text-slate-500 italic">
+              {chainMeta.contractCount.toLocaleString()} contracts · quotes as of {chainMeta.quoteTime} (delayed)
+            </p>
+          )}
         </div>
 
         {/* 2. Current Stock Price */}
@@ -343,36 +425,49 @@ export default function OptionsFilters({ filters, onChange }) {
               </Button>
             </PopoverTrigger>
             {isTickerMode && filters.ticker && (
-              <PopoverContent className="w-full p-0">
-                <Command
-                  // Override default fuzzy search
-                  filter={(value, search) => {
-                    return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
-                  }}
-                >
-                  <CommandInput placeholder="Search contracts..." />
-                  <CommandEmpty>No contract found.</CommandEmpty>
-                  <CommandGroup className="max-h-64 overflow-auto">
-                    {availableContracts.map((contract) => (
-                      <CommandItem
-                        key={contract.value}
-                        value={contract.label}   // 👈 important: use .label here for search
-                        onSelect={() => handleContractChange(contract.value)}
-                      >
-                        <Check
-                          className={`mr-2 h-4 w-4 ${
-                            filters.selectedContract === contract.label
-                              ? "opacity-100"
-                              : "opacity-0"
-                          }`}
-                        />
-                        <div className="flex justify-between w-full">
-                          <span>{contract.label}</span>
-                          <span className="text-slate-500 ml-2">${contract.premium}</span>
-                        </div>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                {/* A full chain is a few thousand rows, so filtering and capping is
+                    done here rather than letting cmdk walk every item on each keystroke. */}
+                <Command shouldFilter={false}>
+                  <CommandInput
+                    placeholder="Search strike or expiration..."
+                    value={contractQuery}
+                    onValueChange={setContractQuery}
+                  />
+                  <CommandList className="max-h-72">
+                    {visibleContracts.length === 0 && <CommandEmpty>No contract found.</CommandEmpty>}
+                    <CommandGroup>
+                      {visibleContracts.map((contract) => (
+                        <CommandItem
+                          key={contract.value}
+                          value={contract.value}
+                          onSelect={() => handleContractChange(contract.value)}
+                        >
+                          <Check
+                            className={`mr-2 h-4 w-4 ${
+                              filters.selectedContract === contract.label
+                                ? "opacity-100"
+                                : "opacity-0"
+                            }`}
+                          />
+                          <div className="flex justify-between w-full gap-2">
+                            <span className="whitespace-nowrap">{contract.label}</span>
+                            <span className="text-slate-500 whitespace-nowrap">
+                              ${contract.premium.toFixed(2)}
+                              {contract.iv !== null && (
+                                <span className="ml-2 text-slate-400">{contract.iv}% IV</span>
+                              )}
+                            </span>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                    {hiddenContractCount > 0 && (
+                      <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100">
+                        +{hiddenContractCount.toLocaleString()} more — type a strike or month to narrow down
+                      </p>
+                    )}
+                  </CommandList>
                 </Command>
               </PopoverContent>
 
@@ -425,7 +520,20 @@ export default function OptionsFilters({ filters, onChange }) {
             className={`text-lg font-semibold ${isTickerMode ? 'opacity-50 cursor-not-allowed' : ''}`}
             disabled={isTickerMode}
           />
-          {isTickerMode && (
+          {isTickerMode && selectedQuote ? (
+            <div className="text-xs text-slate-500 space-y-1">
+              <p className="italic">Mid of bid/ask on the live chain</p>
+              <p className="flex flex-wrap gap-x-3 gap-y-1 font-medium text-slate-600">
+                <span>Bid ${Number(selectedQuote.bid || 0).toFixed(2)}</span>
+                <span>Ask ${Number(selectedQuote.ask || 0).toFixed(2)}</span>
+                <span>Last ${Number(selectedQuote.last || 0).toFixed(2)}</span>
+              </p>
+              <p>
+                Vol {Number(selectedQuote.volume || 0).toLocaleString()} · OI{' '}
+                {Number(selectedQuote.openInterest || 0).toLocaleString()}
+              </p>
+            </div>
+          ) : isTickerMode && (
             <p className="text-xs text-slate-500 italic">
               Auto-filled from selected contract
             </p>

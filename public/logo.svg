@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="f1" x1="40" y1="68" x2="40" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400e"/>
+      <stop offset="45%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+    <linearGradient id="f2" x1="40" y1="62" x2="40" y2="14" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#fef3c7"/>
+    </linearGradient>
+    <linearGradient id="f3" x1="40" y1="56" x2="40" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="100%" stop-color="#fffbeb"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="80" height="80" rx="16" fill="url(#bg)"/>
+
+  <!-- Outer flame -->
+  <path d="
+    M 40 68
+    C 24 66 17 52 22 38
+    C 25 28 29 19 40 9
+    C 51 19 55 28 58 38
+    C 63 52 56 66 40 68
+    Z
+  " fill="url(#f1)"/>
+
+  <!-- Middle flame — slightly left-leaning for dynamism -->
+  <path d="
+    M 39 62
+    C 29 58 26 46 30 36
+    C 33 27 36 20 40 13
+    C 44 20 46 28 48 36
+    C 52 46 50 58 39 62
+    Z
+  " fill="url(#f2)" filter="url(#glow)"/>
+
+  <!-- Inner core flame -->
+  <path d="
+    M 40 55
+    C 34 50 33 42 36 34
+    C 37 28 38 23 40 17
+    C 42 23 43 28 44 34
+    C 47 42 46 50 40 55
+    Z
+  " fill="url(#f3)" filter="url(#glow)"/>
+
+  <!-- Bright tip -->
+  <ellipse cx="40" cy="19" rx="2.5" ry="4" fill="#fffbeb" opacity="0.9"/>
+</svg>
