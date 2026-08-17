@@ -17,6 +17,7 @@ import {
   pickExpiration, pickContract, compareContract, comparisonVerdict,
 } from '@/lib/optionComparison';
 import { useUrlState, asString, asNumber, asEnum } from '@/lib/useUrlState';
+import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
 
 const BRAND = '#2188e6';
 const DEFAULT_TICKERS = 'MSTR,NVDA,AAPL,KO';
@@ -32,6 +33,18 @@ const URL_SPEC = {
   metricId: { ...asEnum(METRICS.map((m) => m.id), 'ivPct'), param: 'metric' },
 };
 
+/**
+ * A carried-over ticker leads the list, with the default peers behind it: the
+ * point of this page is a comparison, so landing on a single row would be a
+ * worse answer than landing on that name measured against others.
+ */
+function seedTickers() {
+  const remembered = getLastTicker();
+  if (!remembered) return DEFAULT_TICKERS;
+  const peers = DEFAULT_TICKERS.split(',').filter((t) => t !== remembered);
+  return [remembered, ...peers].slice(0, 4).join(',');
+}
+
 const URL_DEFAULTS = {
   tickers: DEFAULT_TICKERS,
   matchMode: 'delta',
@@ -43,7 +56,9 @@ const URL_DEFAULTS = {
 };
 
 export default function TickerComparison() {
-  const [view, setView] = useUrlState(URL_SPEC, URL_DEFAULTS);
+  const [view, setView] = useUrlState(URL_SPEC, URL_DEFAULTS, {
+    initial: { tickers: seedTickers() },
+  });
   const { tickers, matchMode, delta, moneyness, targetDte, optionType, metricId } = view;
   const set = (patch) => setView((prev) => ({ ...prev, ...patch }));
 
@@ -92,6 +107,12 @@ export default function TickerComparison() {
   useEffect(() => {
     loadSymbols(symbols);
   }, [symbols, loadSymbols]);
+
+  // The first ticker is this page's subject, so it is the one the other pages
+  // should open on.
+  useEffect(() => {
+    if (symbols[0]) setLastTicker(symbols[0]);
+  }, [symbols]);
 
   const { rows, unmatched } = useMemo(() => {
     const out = [];

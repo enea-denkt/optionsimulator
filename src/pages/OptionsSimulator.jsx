@@ -6,6 +6,7 @@ import EvolutionChart from '../components/simulator/EvolutionChart';
 import MetricsSummary from '../components/simulator/MetricsSummary';
 import { Activity, TrendingUp } from 'lucide-react';
 import { useUrlState, asString, asNumber, asNullableNumber, asEnum } from '@/lib/useUrlState';
+import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
 
 function payoffAtExpiration(spot, strike, optionType = 'call') {
   return optionType === 'call'
@@ -202,7 +203,14 @@ const URL_SPEC = {
 };
 
 export default function OptionsSimulator() {
-  const [filters, setFilters] = useUrlState(URL_SPEC, DEFAULT_FILTERS);
+  // Opens on whichever ticker was last looked at, unless this URL names one.
+  const [filters, setFilters] = useUrlState(URL_SPEC, DEFAULT_FILTERS, {
+    initial: { ticker: getLastTicker() },
+  });
+
+  useEffect(() => {
+    if (filters.ticker) setLastTicker(filters.ticker);
+  }, [filters.ticker]);
 
   const [simulationData, setSimulationData] = useState({ data: [], initialValue: 0 });
 

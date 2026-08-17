@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { AlertCircle, Loader2, RefreshCw, Gauge } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw, Gauge, Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,6 +17,7 @@ import {
   realizedVolSeries, volIndexSeries, rankAndPercentile, rollingRankSeries, trimForChart, RANK_WINDOW,
 } from '@/lib/volatilityHistory';
 import { useUrlState, asString, asBoolean, asEnum } from '@/lib/useUrlState';
+import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
 import {
   listExpirations, atmIV, smile, termStructure, riskReversal25, openInterestByStrike,
   putCallRatio, maxPain, realizedVol, expectedMove, volatilityVerdict, termVerdict, skewVerdict,
@@ -31,7 +32,9 @@ const HISTORY_WINDOWS = [
   { id: '5y', label: '5Y', days: 1260 },
 ];
 
-const DEFAULT_TICKER = 'MSTR';
+// No ticker is preselected: the page opens asking which company to look at,
+// rather than showing one nobody chose.
+const DEFAULT_TICKER = '';
 
 // Everything a reader needs to see the same page, and nothing derived from the
 // chain — quotes should be fresh when a shared link is opened later.
@@ -56,7 +59,10 @@ const URL_DEFAULTS = {
 };
 
 export default function ChainInsights() {
-  const [view, setView] = useUrlState(URL_SPEC, URL_DEFAULTS);
+  // Carry over whatever ticker was last looked at, unless this URL names one.
+  const [view, setView] = useUrlState(URL_SPEC, URL_DEFAULTS, {
+    initial: { ticker: getLastTicker() },
+  });
   const { ticker, expiration, confidence, historyWindow, showRealizedCone, oiMetric, rankMethod } = view;
   const set = (patch) => setView((prev) => ({ ...prev, ...patch }));
 
@@ -109,7 +115,7 @@ export default function ChainInsights() {
   // Mount only: the ticker and expiration come from the URL when the link was
   // shared, and from the defaults otherwise.
   useEffect(() => {
-    load(view.ticker, { keepExpiration: view.expiration || null });
+    if (view.ticker) load(view.ticker, { keepExpiration: view.expiration || null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -117,6 +123,12 @@ export default function ChainInsights() {
     set({ ticker: symbol, expiration: '' });
     load(symbol);
   };
+
+  // Remember whichever ticker is on screen — however it got here, typed or from
+  // a shared link — so the other pages open on the same company.
+  useEffect(() => {
+    if (ticker) setLastTicker(ticker);
+  }, [ticker]);
 
   const spot = chain?.stockPrice || 0;
   const expirations = useMemo(() => (chain ? listExpirations(chain) : []), [chain]);
@@ -227,6 +239,19 @@ export default function ChainInsights() {
           </div>
         </CardContent>
       </Card>
+
+      {!ticker && !loading && (
+        <Card className="border-dashed border-slate-300 shadow-none">
+          <CardContent className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+            <Search className="h-8 w-8 text-slate-300" />
+            <p className="text-base font-semibold text-slate-700">Pick a ticker to begin</p>
+            <p className="max-w-md text-sm text-slate-500">
+              Search any US-listed symbol with options above. Whatever you choose here carries over
+              to the simulator and the comparison page.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {loading && (
         <p className="mb-6 flex items-center gap-2 text-sm text-slate-500">

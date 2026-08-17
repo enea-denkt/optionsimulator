@@ -64,8 +64,15 @@ export const asEnum = (values, fallback) => ({
 /**
  * URL -> state. Exported so the round trip can be tested without a renderer.
  */
-export function hydrateFromParams(spec, defaults, searchParams) {
-  const next = { ...defaults };
+export function hydrateFromParams(spec, defaults, searchParams, initial = null) {
+  // `initial` seeds values the URL does not name — a ticker carried over from
+  // another page, for instance. It is layered under the URL, never over it, so
+  // an explicit parameter always wins.
+  //
+  // Note it is kept separate from `defaults`: omission from the URL is judged
+  // against `defaults`, so a seeded value still gets written out and a link
+  // copied from the address bar carries it.
+  const next = { ...defaults, ...(initial || {}) };
 
   for (const [key, codec] of Object.entries(spec)) {
     const param = codec.param || key;
@@ -110,14 +117,18 @@ function sameValue(a, b) {
 /**
  * @param spec     {key: codec} for the keys that belong in the URL
  * @param defaults the full initial state, including keys outside the spec
- * @param options  `debounceMs` throttles writes while a slider is moving
+ * @param options  `debounceMs` throttles writes while a slider is moving;
+ *                 `initial` seeds keys the URL does not name (read once, on
+ *                 mount) without affecting which values are omitted from it
  */
-export function useUrlState(spec, defaults, { debounceMs = 200 } = {}) {
+export function useUrlState(spec, defaults, { debounceMs = 200, initial = null } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // The URL is authoritative only for the first render; see the note above.
   const initialParams = useRef(searchParams);
-  const [state, setState] = useState(() => hydrateFromParams(spec, defaults, initialParams.current));
+  const seed = useRef(initial);
+  const [state, setState] = useState(() =>
+    hydrateFromParams(spec, defaults, initialParams.current, seed.current));
 
   const timer = useRef(null);
   const latest = useRef(state);
