@@ -38,6 +38,11 @@ export default function OptionsFilters({ filters, onChange }) {
   const [selectedQuote, setSelectedQuote] = useState(null);           // its live bid / ask / last
   const [contractQuery, setContractQuery] = useState('');
 
+  // Declared here rather than beside the render helpers below: hook dependency
+  // arrays are evaluated during render, so a `const` defined further down is
+  // still in its temporal dead zone when the effects reference it.
+  const isTickerMode = filters.simulationMode === 'ticker';
+
 
   // Local state for input fields to manage cursor position
   const [displayStockPrice, setDisplayStockPrice] = useState(filters.currentPrice.toFixed(2));
@@ -329,7 +334,6 @@ export default function OptionsFilters({ filters, onChange }) {
 
 
   const availableContracts = getAvailableContracts();
-  const isTickerMode = filters.simulationMode === 'ticker';
 
   // With no search term, lead with the strikes closest to spot — the ones anyone
   // actually trades — instead of the far wings that dominate a raw chain.
