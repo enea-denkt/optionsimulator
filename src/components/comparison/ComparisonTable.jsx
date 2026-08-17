@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp } from 'lucide-react';
-import { METRICS } from '@/lib/optionComparison';
+import { METRICS, rankingValue } from '@/lib/optionComparison';
 import { formatExpiration } from '@/api/marketData';
 
 /**
@@ -13,17 +13,24 @@ import { formatExpiration } from '@/api/marketData';
 export default function ComparisonTable({ rows, metricId, sort, onSortChange }) {
   if (!rows.length) return null;
 
-  const values = rows.map((r) => r[metricId]).filter(Number.isFinite);
-  const dearest = values.length ? Math.max(...values) : null;
-  const cheapest = values.length ? Math.min(...values) : null;
+  const activeMetric = METRICS.find((m) => m.id === metricId);
+  const ranked = rows.map((r) => rankingValue(activeMetric, r)).filter((v) => v !== null);
+  const dearest = ranked.length ? Math.max(...ranked) : null;
+  const cheapest = ranked.length ? Math.min(...ranked) : null;
+
+  const sortMetric = METRICS.find((m) => m.id === sort.key);
+  const sortValue = (row) => {
+    const raw = row[sort.key];
+    if (typeof raw === 'string') return raw;
+    if (!Number.isFinite(raw)) return -Infinity;
+    return sortMetric?.magnitude ? Math.abs(raw) : raw;
+  };
 
   const sorted = [...rows].sort((a, b) => {
-    const av = a[sort.key];
-    const bv = b[sort.key];
+    const av = sortValue(a);
+    const bv = sortValue(b);
     if (typeof av === 'string') return sort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-    const an = Number.isFinite(av) ? av : -Infinity;
-    const bn = Number.isFinite(bv) ? bv : -Infinity;
-    return sort.dir === 'asc' ? an - bn : bn - an;
+    return sort.dir === 'asc' ? av - bv : bv - av;
   });
 
   const toggle = (key) =>
@@ -74,9 +81,9 @@ export default function ComparisonTable({ rows, metricId, sort, onSortChange }) 
         </thead>
         <tbody>
           {sorted.map((row) => {
-            const value = row[metricId];
-            const isDearest = Number.isFinite(value) && value === dearest && values.length > 1;
-            const isCheapest = Number.isFinite(value) && value === cheapest && values.length > 1;
+            const value = rankingValue(activeMetric, row);
+            const isDearest = value !== null && value === dearest && ranked.length > 1;
+            const isCheapest = value !== null && value === cheapest && ranked.length > 1;
 
             return (
               <tr key={row.symbol} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">

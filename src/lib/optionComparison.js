@@ -113,6 +113,26 @@ export function compareContract({ symbol, chain, expiration, dte, contract, opti
   const move = ivPct ? expectedMove(spot, ivPct, dte) : null;
   const impliedMovePct = move ? move.pct : null;
 
+  // Where the option's return on capital equals the return on simply owning the
+  // shares. Setting (S-K-P)/P = (S-S0)/S0 for a call and solving gives
+  // S* = S0*K / (S0 - P); the put case flips the sign to S0*K / (S0 + P).
+  //
+  // Breakeven only asks the option not to lose money; this asks it to beat the
+  // alternative of putting the same conviction into shares. Which of the two is
+  // the harder test depends on the side, and it is worth being exact:
+  //
+  //   - for a **call** the benchmark is gaining as the stock rises, so the
+  //     option has to clear breakeven and then keep going
+  //   - for a **put** the benchmark is losing as the stock falls, so the put can
+  //     beat it while still down on the trade — the bar is lower than breakeven
+  //
+  // Verified against live chains: at this price the two returns match to the
+  // penny on both sides.
+  const denominator = optionType === 'put' ? spot + premium : spot - premium;
+  const outperformancePrice = denominator > 0 ? (spot * contract.strike) / denominator : null;
+  const outperformanceMovePct =
+    outperformancePrice !== null && spot > 0 ? ((outperformancePrice - spot) / spot) * 100 : null;
+
   return {
     symbol,
     spot,
@@ -141,6 +161,8 @@ export function compareContract({ symbol, chain, expiration, dte, contract, opti
 
     breakeven,
     breakevenMovePct,
+    outperformancePrice,
+    outperformanceMovePct,
     impliedMovePct,
     // <1: the breakeven sits inside the move the market is pricing.
     // >1: the stock has to beat expectations just to break even.
@@ -200,6 +222,16 @@ export const METRICS = [
     format: (v) => (v === null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`),
     hint: 'How far the share price must travel by expiry before the option returns its cost.',
     higherIsExpensive: true,
+    magnitude: true,
+  },
+  {
+    id: 'outperformanceMovePct',
+    label: 'Move needed to beat the stock',
+    short: 'Beat-the-stock move',
+    format: (v) => (v === null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`),
+    hint: 'How far the share price must travel before the option\u2019s return on capital beats simply owning the shares. For calls that is further than breakeven, since the shares are gaining too; for puts it is nearer, since the shares are losing.',
+    higherIsExpensive: true,
+    magnitude: true,
   },
   {
     id: 'impliedMovePct',
@@ -211,13 +243,26 @@ export const METRICS = [
   },
 ];
 
+/**
+ * The number a metric should be *ranked* on, which is not always the number
+ * shown. The move columns are signed — a put needs the stock to fall — so a
+ * plain descending sort would call the smallest required fall the most
+ * demanding. Distance travelled is what those columns actually mean.
+ */
+export function rankingValue(metric, row) {
+  const raw = row?.[metric.id];
+  if (!Number.isFinite(raw)) return null;
+  return metric.magnitude ? Math.abs(raw) : raw;
+}
+
 /** Ranks rows on a metric and returns a sentence naming the extremes. */
 export function comparisonVerdict(rows, metricId, matchLabel) {
   const metric = METRICS.find((m) => m.id === metricId);
-  const usable = rows.filter((r) => Number.isFinite(r[metricId]));
-  if (!metric || usable.length < 2) return null;
+  if (!metric) return null;
+  const usable = rows.filter((r) => rankingValue(metric, r) !== null);
+  if (usable.length < 2) return null;
 
-  const sorted = [...usable].sort((a, b) => b[metricId] - a[metricId]);
+  const sorted = [...usable].sort((a, b) => rankingValue(metric, b) - rankingValue(metric, a));
   const dearest = sorted[0];
   const cheapest = sorted[sorted.length - 1];
 

@@ -14,7 +14,7 @@ import InsightCard, { ChartTooltip } from '@/components/insights/InsightCard';
 import { fetchOptionChain } from '@/api/marketData';
 import {
   MATCH_MODES, METRICS, DEFAULT_DELTA, DEFAULT_MONEYNESS, DEFAULT_TARGET_DTE,
-  pickExpiration, pickContract, compareContract, comparisonVerdict,
+  pickExpiration, pickContract, compareContract, comparisonVerdict, rankingValue,
 } from '@/lib/optionComparison';
 import { useUrlState, asString, asNumber, asEnum } from '@/lib/useUrlState';
 import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
@@ -155,9 +155,11 @@ export default function TickerComparison() {
     : `${(moneyness * 100).toFixed(0)}% of spot`;
   const verdict = comparisonVerdict(rows, metricId, matchLabel);
 
+  // Ordered by ranking value so signed move columns sort by distance travelled,
+  // while the bars still plot the signed number the reader sees in the table.
   const chartData = [...rows]
-    .filter((r) => Number.isFinite(r[metricId]))
-    .sort((a, b) => b[metricId] - a[metricId]);
+    .filter((r) => rankingValue(metric, r) !== null)
+    .sort((a, b) => rankingValue(metric, b) - rankingValue(metric, a));
 
   const loading = pending.length > 0;
 
