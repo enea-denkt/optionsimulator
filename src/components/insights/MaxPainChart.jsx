@@ -57,7 +57,7 @@ export default function MaxPainChart({ maxPain, spot, expirationLabel, dte }) {
       }
     >
       <ResponsiveContainer width="100%" height={260}>
-        <AreaChart data={maxPain.curve} margin={{ top: 10, right: 16, left: 8, bottom: 24 }}>
+        <AreaChart data={maxPain.curve} margin={{ top: 28, right: 16, left: 8, bottom: 24 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis
             dataKey="strike"

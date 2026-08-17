@@ -73,7 +73,7 @@ export default function OpenInterestChart({ data, spot, ratios, expirationLabel 
       }
     >
       <ResponsiveContainer width="100%" height={280}>
-        <BarChart data={data} margin={{ top: 10, right: 16, left: 8, bottom: 24 }}>
+        <BarChart data={data} margin={{ top: 28, right: 16, left: 8, bottom: 24 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
           <XAxis
             dataKey="strike"

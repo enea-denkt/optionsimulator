@@ -30,7 +30,7 @@ export default function VolatilitySmileChart({ data, spot, riskReversal, verdict
       {hasData ? (
         <>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={data} margin={{ top: 10, right: 16, left: 8, bottom: 24 }}>
+            <LineChart data={data} margin={{ top: 28, right: 16, left: 8, bottom: 24 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis
                 dataKey="strike"
