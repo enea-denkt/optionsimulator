@@ -693,7 +693,7 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
 
                 <YAxis
                   domain={['auto', 'auto']}
-                  label={{ value: 'Net Return', angle: -90, position: 'insideLeft', offset: -10 }}
+                  label={{ value: 'Return', angle: -90, position: 'insideLeft', offset: -10 }}
                   stroke="#64748b"
                   tickFormatter={(value) => `${value}%`}
                   tick={yAxisTickStyle} />

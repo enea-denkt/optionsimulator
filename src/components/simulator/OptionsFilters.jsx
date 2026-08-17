@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Check, ChevronsUpDown, Loader2, RefreshCw, AlertCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch"; // Import the Switch component
 import TickerSearch from "./TickerSearch";
-import { fetchOptionChain, findContractQuote, formatExpiration, parseISODate } from "@/api/marketData";
+import { fetchOptionChain, findContractByOcc, formatExpiration, parseISODate } from "@/api/marketData";
 
 
 export default function OptionsFilters({ filters, onChange }) {
@@ -21,7 +21,7 @@ export default function OptionsFilters({ filters, onChange }) {
   const [chainMeta, setChainMeta] = useState(null);   // quote time + underlying, for the freshness line
   const [loadingChain, setLoadingChain] = useState(false);
   const [chainError, setChainError] = useState(null);
-  const [selectedExpiration, setSelectedExpiration] = useState(null); // ISO date of the picked contract
+  const [selectedOcc, setSelectedOcc] = useState(null);               // OCC symbol — the only unique contract id
   const [selectedQuote, setSelectedQuote] = useState(null);           // its live bid / ask / last
   const [contractQuery, setContractQuery] = useState('');
 
@@ -71,6 +71,9 @@ export default function OptionsFilters({ filters, onChange }) {
       daysToExpiration: 90
     });
 
+    setSelectedOcc(null);
+    setSelectedQuote(null);
+    setContractQuery('');
     setLoadingChain(true);
     setChainError(null);
 
@@ -132,9 +135,12 @@ export default function OptionsFilters({ filters, onChange }) {
         priceRangeMax: chain.stockPrice * 1.2
       };
 
-      if (selectedExpiration) {
-        const quote = findContractQuote(chain, filters.optionType, filters.strikePrice, selectedExpiration);
+      if (selectedOcc) {
+        // By OCC symbol, so a refresh re-prices the exact series that was
+        // picked instead of whichever one happens to share its strike.
+        const quote = findContractByOcc(chain, selectedOcc);
         if (quote) {
+          setSelectedQuote(quote);
           next.premiumPaid = quote.mark;
           if (quote.implied_volatility) next.currentIV = Math.round(quote.implied_volatility * 100);
         }
@@ -153,36 +159,36 @@ export default function OptionsFilters({ filters, onChange }) {
 
 
 
-  const handleContractChange = (contractString) => {
-    const [strike, expDate] = contractString.split(" - ");
-
-    if (!contractsData[filters.optionType]) return;
-    if (!contractsData[filters.optionType][strike]) return;
+  // Takes an OCC symbol, not a "strike - expiration" string: that string is not
+  // unique when a ticker has adjusted series, so it used to resolve to the first
+  // matching contract rather than the one that was clicked.
+  const handleContractChange = (occSymbol) => {
+    const contract = availableContracts.find(c => c.occSymbol === occSymbol);
+    if (!contract) return;
 
     // Compare dates in local time on both sides so the day never shifts by timezone.
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const expirationDateObj = parseISODate(expDate);
 
-    const diffTime = expirationDateObj - today;
+    const diffTime = parseISODate(contract.expiration) - today;
     const daysToExp = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)));
 
-    const formattedContractString = `${strike} - ${formatExpiration(expDate)}`;
-    const contract = availableContracts.find(c => c.value === contractString);
+    setSelectedOcc(contract.occSymbol);
+    setSelectedQuote(contract);
 
-    setSelectedExpiration(expDate);
-    setSelectedQuote(contract || null);
+    // Close on pick, like the ticker search does, and clear the filter so the
+    // list opens on the near-the-money contracts again next time.
+    setContractOpen(false);
+    setContractQuery('');
 
-    const newFilters = {
+    onChange({
       ...filters,
-      selectedContract: formattedContractString,
-      premiumPaid: contract ? contract.premium : 0,
-      strikePrice: parseFloat(strike),
+      selectedContract: contract.label,
+      premiumPaid: contract.premium,
+      strikePrice: contract.strike,
       daysToExpiration: daysToExp,
-      currentIV: contract && contract.iv !== null ? contract.iv : filters.currentIV // 👈 overwrite IV
-    };
-
-    onChange(newFilters);
+      currentIV: contract.iv !== null ? contract.iv : filters.currentIV // 👈 overwrite IV
+    });
   };
 
 
@@ -190,7 +196,7 @@ export default function OptionsFilters({ filters, onChange }) {
 
 
   const handleOptionTypeChange = (type) => {
-    setSelectedExpiration(null);
+    setSelectedOcc(null);
     setSelectedQuote(null);
     onChange({
       ...filters,
@@ -247,24 +253,36 @@ export default function OptionsFilters({ filters, onChange }) {
 
     return Object.entries(contractsData[filters.optionType])
       .flatMap(([strike, contracts]) =>
-        contracts.map(({ expiration, mark, implied_volatility, bid, ask, last, volume, openInterest }) => ({
-          label: `${strike} - ${formatExpiration(expiration)}`, // display
-          value: `${strike} - ${expiration}`,                   // internal value
+        contracts.map((c) => ({
+          // Other series (SPXW, ASST1, ...) share a strike and an expiration with
+          // the standard contract, so the root has to be in the label to tell
+          // them apart.
+          label: c.isStandardRoot
+            ? `${strike} - ${formatExpiration(c.expiration)}`
+            : `${strike} - ${formatExpiration(c.expiration)} (${c.root})`,
+          occSymbol: c.occSymbol,                               // unique identity
+          root: c.root,
+          isStandardRoot: c.isStandardRoot,
           strike: parseFloat(strike),
-          expiration,
-          premium: parseFloat(mark) || 0,                       // mid of bid/ask, else last trade
-          iv: implied_volatility
-            ? Math.round(parseFloat(implied_volatility) * 100)  // → % with 0 decimals
+          expiration: c.expiration,
+          premium: parseFloat(c.mark) || 0,                     // mid of bid/ask, else last trade
+          iv: c.implied_volatility
+            ? Math.round(parseFloat(c.implied_volatility) * 100) // → % with 0 decimals
             : null,
-          bid,
-          ask,
-          last,
-          volume,
-          openInterest
+          bid: c.bid,
+          ask: c.ask,
+          last: c.last,
+          volume: c.volume,
+          openInterest: c.openInterest
         }))
       )
       // Nearest expiration first, then by strike — the order traders scan in.
-      .sort((a, b) => a.expiration.localeCompare(b.expiration) || a.strike - b.strike);
+      .sort(
+        (a, b) =>
+          a.expiration.localeCompare(b.expiration) ||
+          a.strike - b.strike ||
+          Number(b.isStandardRoot) - Number(a.isStandardRoot)
+      );
   };
 
 
@@ -283,10 +301,15 @@ export default function OptionsFilters({ filters, onChange }) {
       return [...availableContracts].sort(
         (a, b) =>
           a.expiration.localeCompare(b.expiration) ||
-          Math.abs(a.strike - spot) - Math.abs(b.strike - spot)
+          Math.abs(a.strike - spot) - Math.abs(b.strike - spot) ||
+          Number(b.isStandardRoot) - Number(a.isStandardRoot)
       );
     }
-    return availableContracts.filter((c) => c.label.toLowerCase().includes(query));
+    return availableContracts.filter(
+      (c) =>
+        c.label.toLowerCase().includes(query) ||
+        c.occSymbol.toLowerCase().includes(query)
+    );
   })();
 
   const visibleContracts = matchedContracts.slice(0, CONTRACT_RENDER_LIMIT);
@@ -439,13 +462,13 @@ export default function OptionsFilters({ filters, onChange }) {
                     <CommandGroup>
                       {visibleContracts.map((contract) => (
                         <CommandItem
-                          key={contract.value}
-                          value={contract.value}
-                          onSelect={() => handleContractChange(contract.value)}
+                          key={contract.occSymbol}
+                          value={contract.occSymbol}
+                          onSelect={() => handleContractChange(contract.occSymbol)}
                         >
                           <Check
                             className={`mr-2 h-4 w-4 ${
-                              filters.selectedContract === contract.label
+                              selectedOcc === contract.occSymbol
                                 ? "opacity-100"
                                 : "opacity-0"
                             }`}
@@ -522,7 +545,12 @@ export default function OptionsFilters({ filters, onChange }) {
           />
           {isTickerMode && selectedQuote ? (
             <div className="text-xs text-slate-500 space-y-1">
-              <p className="italic">Mid of bid/ask on the live chain</p>
+              <p className="italic">
+                Mid of bid/ask on the live chain
+                {selectedQuote.occSymbol && (
+                  <span className="ml-1 not-italic text-slate-400">· {selectedQuote.occSymbol}</span>
+                )}
+              </p>
               <p className="flex flex-wrap gap-x-3 gap-y-1 font-medium text-slate-600">
                 <span>Bid ${Number(selectedQuote.bid || 0).toFixed(2)}</span>
                 <span>Ask ${Number(selectedQuote.ask || 0).toFixed(2)}</span>

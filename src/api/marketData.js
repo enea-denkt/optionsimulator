@@ -101,6 +101,16 @@ function parseOccSymbol(occ) {
   };
 }
 
+/**
+ * A root that is the ticker plus a trailing digit (ASST1, ASST2) is an OCC
+ * *adjusted* series: a corporate action changed what one contract delivers, so
+ * it is no longer 100 ordinary shares. Roots that differ by a letter instead
+ * (SPXW, NDXP) are ordinary separate series and must not be flagged.
+ */
+function isAdjustedRoot(root, symbol) {
+  return root !== symbol && root.startsWith(symbol) && /\d$/.test(root);
+}
+
 /** Parse "YYYY-MM-DD" in local time so the displayed day never shifts by timezone. */
 export function parseISODate(iso) {
   const [y, m, d] = String(iso).split('-').map(Number);
@@ -162,6 +172,10 @@ function normalizeChain(payload, symbol) {
   const maxStrike = stockPrice > 0 ? stockPrice * 5 : Infinity;
 
   const contracts = { call: {}, put: {} };
+  // The OCC symbol is the only unique identity a contract has: strike and
+  // expiration alone collide across adjusted series (ASST / ASST1 / ASST2 all
+  // list a 15-strike Jan-2028 call at very different prices).
+  const bySymbol = new Map();
   let kept = 0;
 
   for (const quote of data.options || []) {
@@ -169,10 +183,12 @@ function normalizeChain(payload, symbol) {
     if (!parsed) continue;
     if (parsed.strike < minStrike || parsed.strike > maxStrike) continue;
     if (parseISODate(parsed.expiration) < today) continue;
+    // Adjusted series are dropped rather than shown: one contract no longer
+    // delivers 100 ordinary shares, so the simulator's payoff model does not
+    // apply to them and every number it produces would be wrong.
+    if (isAdjustedRoot(parsed.root, symbol)) continue;
 
-    const bucket = contracts[parsed.optionType];
-    const key = strikeKey(parsed.strike);
-    (bucket[key] ||= []).push({
+    const contract = {
       expiration: parsed.expiration,
       mark: markPrice(quote),
       implied_volatility: quote.iv > 0 ? quote.iv : null,
@@ -184,13 +200,29 @@ function normalizeChain(payload, symbol) {
       openInterest: quote.open_interest,
       delta: quote.delta,
       occSymbol: quote.option,
-    });
+      optionType: parsed.optionType,
+      strike: parsed.strike,
+      root: parsed.root,
+      // SPXW and NDXP survive the filter above and still share strikes and
+      // expirations with the standard series, so the root must reach the UI.
+      isStandardRoot: parsed.root === symbol,
+    };
+
+    const bucket = contracts[parsed.optionType];
+    (bucket[strikeKey(parsed.strike)] ||= []).push(contract);
+    bySymbol.set(contract.occSymbol, contract);
     kept += 1;
   }
 
   for (const side of Object.values(contracts)) {
     for (const list of Object.values(side)) {
-      list.sort((a, b) => a.expiration.localeCompare(b.expiration));
+      // Standard series first, so the ordinary contract is the obvious default.
+      list.sort(
+        (a, b) =>
+          a.expiration.localeCompare(b.expiration) ||
+          Number(b.isStandardRoot) - Number(a.isStandardRoot) ||
+          a.root.localeCompare(b.root),
+      );
     }
   }
 
@@ -202,6 +234,7 @@ function normalizeChain(payload, symbol) {
     quoteTime: payload.timestamp || data.last_trade_time || null,
     contractCount: kept,
     contracts,
+    bySymbol,
   };
 }
 
@@ -250,12 +283,14 @@ export async function fetchQuote(rawSymbol) {
 }
 
 /**
- * Look up the live price of one contract inside an already-fetched chain.
- * Returns null when the contract is no longer quoted.
+ * Look up one exact contract inside an already-fetched chain by its OCC symbol.
+ * Returns null when that contract is no longer quoted.
+ *
+ * Keyed on the OCC symbol rather than strike + expiration on purpose: those two
+ * do not identify a contract when adjusted series exist (see isAdjustedRoot).
  */
-export function findContractQuote(chain, optionType, strike, expiration) {
-  const list = chain?.contracts?.[optionType]?.[strikeKey(Number(strike))];
-  return list?.find((c) => c.expiration === expiration) || null;
+export function findContractByOcc(chain, occSymbol) {
+  return chain?.bySymbol?.get(occSymbol) || null;
 }
 
 /* ------------------------------------------------------------------ *

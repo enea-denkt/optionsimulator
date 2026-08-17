@@ -112,7 +112,53 @@ expression, and `{…}` is only valid among JSX *children*. Use a plain `//` com
 above the element instead. Vite's error overlay also persists after the fix until
 the page is reloaded, which makes a corrected file look broken.
 
-## 7. Deployment specifics for GitHub Pages
+## 7. Strike + expiration does not identify a contract
+
+Found through ASST, which lists **three** 15-strike Jan-2028 calls. They differ by
+OCC *root*: `ASST`, `ASST1`, `ASST2`. A corporate action (ASST's split) changes what
+one contract delivers; OCC leaves the old contracts trading under a new root with a
+digit appended, and the strike and expiration stay the same.
+
+How different they are, from put–call parity across every two-sided pair
+(`S* = C − P + K·e^(−rT)`, spot $12.36):
+
+| Root | Contracts | Implied deliverable | vs spot |
+| --- | --- | --- | --- |
+| `ASST` | 758 | $12.23 | 0.99× — standard, 100 shares |
+| `ASST1` | 88 | $12.73 | 1.03× |
+| `ASST2` | 102 | $0.50 | **0.04×** |
+
+Hence a 15-strike call marking $5.08 on one root and $0.03 on another.
+
+The app keyed contracts on `"strike - expiration"`, so all three collapsed into one
+identity and produced three separate symptoms:
+
+* `availableContracts.find(...)` returned the **first** match — clicking `ASST2`
+  loaded `ASST`'s premium
+* the tick compared `selectedContract === contract.label`, so **all three rows
+  showed as selected**
+* `key={contract.value}` gave React duplicate keys, and Refresh re-priced by
+  strike + expiration, so it could silently swap series between refreshes
+
+**Fix: the OCC symbol is the only unique identity a contract has.** The chain now
+carries a `bySymbol` index, `findContractQuote(chain, type, strike, expiration)`
+became `findContractByOcc(chain, occSymbol)`, and selection, React keys, the tick
+and the refresh path all key on it.
+
+**Digit vs letter matters.** Adjusted roots append a *digit* (`ASST1`); ordinary
+separate series append a *letter* (`SPXW`, `NDXP`). Only the first is an adjustment,
+so the test is `root !== symbol && root.startsWith(symbol) && /\d$/.test(root)`.
+Worth knowing: **SPX and SPXW collide on strike + expiration too** (AM- vs
+PM-settled), so the same bug was live on every index chain and was never noticed.
+Non-standard roots that are *not* adjustments are kept, with the root in the label.
+
+Adjusted series are **dropped in `normalizeChain`** rather than shown. The binomial
+model prices `max(S − K, 0)` per share and assumes 100 ordinary shares, so on
+`ASST2` every downstream number would be off by ~25×. The premium and IV would be
+real and everything derived from them wrong — worse than not offering them. They are
+barely tradeable anyway (0 volume across the board). ASST drops 888 → 734 contracts.
+
+## 8. Deployment specifics for GitHub Pages
 
 * `base` must match the repo path (`/optionsimulator/`), and the router `basename`
   must follow it — `import.meta.env.BASE_URL` keeps them in sync instead of the
@@ -122,7 +168,7 @@ the page is reloaded, which makes a corrected file look broken.
 * The deploy workflow is **manual trigger only** (`workflow_dispatch`) so a push
   cannot silently replace the live site.
 
-## 8. Testing notes
+## 9. Testing notes
 
 Playwright against the real dev server caught what unit tests would have missed:
 the empty contract list, the wrong base path, and the CORS failures in a genuine
@@ -134,7 +180,7 @@ One harness trap: the adapter initially dropped request headers, which made the
 origin allowlist look broken when it was fine. Verify the test harness before
 trusting a negative result.
 
-## 9. Deploying the worker (Cloudflare dashboard)
+## 10. Deploying the worker (Cloudflare dashboard)
 
 Workers & Pages → Create → **"Start with Hello World!"**. The neighbouring options
 are both wrong for this: *Connect GitHub* tries to build the whole Vite app and
@@ -157,7 +203,7 @@ Live at **https://market-proxy.enea-denkt.workers.dev**. Verified against it:
 The symbol directory is the slow one, which is why it is fetched lazily on the
 first search and kept in memory rather than re-fetched per keystroke.
 
-## 10. Publishing, as actually performed
+## 11. Publishing, as actually performed
 
 GitHub Pages serves the **`gh-pages` branch**. Pushing source to `main` changes
 nothing on the live site — that surprise is worth remembering.
@@ -179,7 +225,7 @@ endpoint works and uses the same key:
 git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages
 ```
 
-## 11. Still open
+## 12. Still open
 
 * **Cboe's terms (§4) are now being exercised in production**, not in testing. The
   IP-block risk is real rather than theoretical; migrating to a licensed feed
