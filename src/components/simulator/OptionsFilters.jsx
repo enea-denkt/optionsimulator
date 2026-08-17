@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,21 @@ import { Button } from "@/components/ui/button";
 import { Check, ChevronsUpDown, Loader2, RefreshCw, AlertCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch"; // Import the Switch component
 import TickerSearch from "./TickerSearch";
-import { fetchOptionChain, findContractByOcc, formatExpiration, parseISODate } from "@/api/marketData";
+import { fetchOptionChain, findContractByOcc, formatExpiration, parseISODate, describeOccSymbol } from "@/api/marketData";
+
+// Other series (SPXW, ...) share a strike and an expiration with the standard
+// contract, so the root has to be in the label to tell them apart.
+function contractLabel(strike, expiration, contract) {
+  const base = `${strike} - ${formatExpiration(expiration)}`;
+  return contract?.isStandardRoot === false ? `${base} (${contract.root})` : base;
+}
+
+/** Calendar days from today to an expiration, compared in local time both sides. */
+function daysUntil(expiration) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.max(1, Math.round((parseISODate(expiration) - today) / 86400000));
+}
 
 
 export default function OptionsFilters({ filters, onChange }) {
@@ -21,7 +35,6 @@ export default function OptionsFilters({ filters, onChange }) {
   const [chainMeta, setChainMeta] = useState(null);   // quote time + underlying, for the freshness line
   const [loadingChain, setLoadingChain] = useState(false);
   const [chainError, setChainError] = useState(null);
-  const [selectedOcc, setSelectedOcc] = useState(null);               // OCC symbol — the only unique contract id
   const [selectedQuote, setSelectedQuote] = useState(null);           // its live bid / ask / last
   const [contractQuery, setContractQuery] = useState('');
 
@@ -59,20 +72,23 @@ export default function OptionsFilters({ filters, onChange }) {
   // Loads the live chain for a ticker: underlying price, every listed contract,
   // its mark and its implied volatility. Data comes from Cboe's public
   // delayed-quotes feed, which needs no API key (see src/api/marketData.js).
-  const loadChain = async (ticker, { force = false } = {}) => {
+  const loadChain = async (ticker, { force = false, preserveSelection = false } = {}) => {
     // Reset dependent fields first so stale numbers are never shown mid-load.
-    onChange({
-      ...filters,
-      ticker,
-      currentPrice: 0,
-      selectedContract: '',
-      premiumPaid: 0,
-      strikePrice: 0,
-      daysToExpiration: 90
-    });
+    // Skipped when restoring a shared link, where those fields are the point.
+    if (!preserveSelection) {
+      onChange({
+        ...filters,
+        ticker,
+        currentPrice: 0,
+        selectedContract: '',
+        selectedOcc: '',
+        premiumPaid: 0,
+        strikePrice: 0,
+        daysToExpiration: 90
+      });
+      setSelectedQuote(null);
+    }
 
-    setSelectedOcc(null);
-    setSelectedQuote(null);
     setContractQuery('');
     setLoadingChain(true);
     setChainError(null);
@@ -87,19 +103,37 @@ export default function OptionsFilters({ filters, onChange }) {
         iv30: chain.iv30
       });
 
-      onChange({
+      const next = {
         ...filters,
         ticker,
         currentPrice: chain.stockPrice,
-        selectedContract: '',
-        premiumPaid: 0,
-        strikePrice: 0,
-        daysToExpiration: 90,
-        currentIV: chain.iv30 ? Math.round(chain.iv30) : filters.currentIV,
         priceRangeMin: chain.stockPrice * 0.8,
         priceRangeMax: chain.stockPrice * 1.2
-      });
+      };
 
+      const restored = preserveSelection && filters.selectedOcc
+        ? findContractByOcc(chain, filters.selectedOcc)
+        : null;
+
+      if (restored) {
+        // A shared link carries only the contract's identity, so its price,
+        // strike and expiry are re-read here — the reader sees today's quote.
+        setSelectedQuote(restored);
+        next.selectedContract = contractLabel(restored.strike, restored.expiration, restored);
+        next.premiumPaid = restored.mark;
+        next.strikePrice = restored.strike;
+        next.daysToExpiration = daysUntil(restored.expiration);
+        if (restored.implied_volatility) next.currentIV = Math.round(restored.implied_volatility * 100);
+      } else if (!preserveSelection) {
+        next.selectedContract = '';
+        next.selectedOcc = '';
+        next.premiumPaid = 0;
+        next.strikePrice = 0;
+        next.daysToExpiration = 90;
+        next.currentIV = chain.iv30 ? Math.round(chain.iv30) : filters.currentIV;
+      }
+
+      onChange(next);
       setDisplayStockPrice(chain.stockPrice.toFixed(2));
     } catch (err) {
       console.error("Error fetching option chain:", err);
@@ -112,6 +146,21 @@ export default function OptionsFilters({ filters, onChange }) {
   };
 
   const handleTickerChange = (ticker) => loadChain(ticker);
+
+  // Restores a shared link: the URL supplies the ticker (and possibly a
+  // contract) but not the chain, so fetch it once on mount without wiping the
+  // very values that were shared.
+  const restoredFor = useRef(null);
+  useEffect(() => {
+    if (!isTickerMode || !filters.ticker) return;
+    if (restoredFor.current === filters.ticker) return;
+    if (chainMeta || loadingChain) return;
+
+    restoredFor.current = filters.ticker;
+    loadChain(filters.ticker, { preserveSelection: true });
+    // loadChain closes over filters; re-running on every change would refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.ticker, isTickerMode]);
 
   // Re-pull the chain and re-price whatever contract is currently selected.
   const handleRefreshQuotes = async () => {
@@ -135,10 +184,10 @@ export default function OptionsFilters({ filters, onChange }) {
         priceRangeMax: chain.stockPrice * 1.2
       };
 
-      if (selectedOcc) {
+      if (filters.selectedOcc) {
         // By OCC symbol, so a refresh re-prices the exact series that was
         // picked instead of whichever one happens to share its strike.
-        const quote = findContractByOcc(chain, selectedOcc);
+        const quote = findContractByOcc(chain, filters.selectedOcc);
         if (quote) {
           setSelectedQuote(quote);
           next.premiumPaid = quote.mark;
@@ -166,14 +215,6 @@ export default function OptionsFilters({ filters, onChange }) {
     const contract = availableContracts.find(c => c.occSymbol === occSymbol);
     if (!contract) return;
 
-    // Compare dates in local time on both sides so the day never shifts by timezone.
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const diffTime = parseISODate(contract.expiration) - today;
-    const daysToExp = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)));
-
-    setSelectedOcc(contract.occSymbol);
     setSelectedQuote(contract);
 
     // Close on pick, like the ticker search does, and clear the filter so the
@@ -184,9 +225,10 @@ export default function OptionsFilters({ filters, onChange }) {
     onChange({
       ...filters,
       selectedContract: contract.label,
+      selectedOcc: contract.occSymbol,
       premiumPaid: contract.premium,
       strikePrice: contract.strike,
-      daysToExpiration: daysToExp,
+      daysToExpiration: daysUntil(contract.expiration),
       currentIV: contract.iv !== null ? contract.iv : filters.currentIV // 👈 overwrite IV
     });
   };
@@ -196,12 +238,12 @@ export default function OptionsFilters({ filters, onChange }) {
 
 
   const handleOptionTypeChange = (type) => {
-    setSelectedOcc(null);
     setSelectedQuote(null);
     onChange({
       ...filters,
       optionType: type,
       selectedContract: '',
+      selectedOcc: '',
       premiumPaid: 0,
       strikePrice: 0
     });
@@ -257,9 +299,7 @@ export default function OptionsFilters({ filters, onChange }) {
           // Other series (SPXW, ASST1, ...) share a strike and an expiration with
           // the standard contract, so the root has to be in the label to tell
           // them apart.
-          label: c.isStandardRoot
-            ? `${strike} - ${formatExpiration(c.expiration)}`
-            : `${strike} - ${formatExpiration(c.expiration)} (${c.root})`,
+          label: contractLabel(strike, c.expiration, c),
           occSymbol: c.occSymbol,                               // unique identity
           root: c.root,
           isStandardRoot: c.isStandardRoot,
@@ -443,7 +483,9 @@ export default function OptionsFilters({ filters, onChange }) {
                 className={`w-full justify-between text-base ${!isTickerMode || !filters.ticker ? 'opacity-50 cursor-not-allowed' : ''}`}
                 disabled={!filters.ticker || !isTickerMode}
               >
-                {filters.selectedContract || "Select contract..."}
+                {filters.selectedContract
+                  || describeOccSymbol(filters.selectedOcc)?.label
+                  || "Select contract..."}
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
@@ -468,7 +510,7 @@ export default function OptionsFilters({ filters, onChange }) {
                         >
                           <Check
                             className={`mr-2 h-4 w-4 ${
-                              selectedOcc === contract.occSymbol
+                              filters.selectedOcc === contract.occSymbol
                                 ? "opacity-100"
                                 : "opacity-0"
                             }`}

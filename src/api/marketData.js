@@ -112,6 +112,22 @@ function isAdjustedRoot(root, symbol) {
   return root !== symbol && root.startsWith(symbol) && /\d$/.test(root);
 }
 
+/**
+ * Everything an OCC symbol encodes, without needing the chain.
+ *
+ * This is what lets a shared link render its contract immediately: the symbol
+ * alone carries strike, expiration and side, so the picker can show the right
+ * label while the chain is still loading, or if it fails to load at all.
+ */
+export function describeOccSymbol(occ) {
+  const parsed = parseOccSymbol(String(occ || '').toUpperCase());
+  if (!parsed) return null;
+  return {
+    ...parsed,
+    label: `${parsed.strike} - ${formatExpiration(parsed.expiration)}`,
+  };
+}
+
 /** Parse "YYYY-MM-DD" in local time so the displayed day never shifts by timezone. */
 export function parseISODate(iso) {
   const [y, m, d] = String(iso).split('-').map(Number);

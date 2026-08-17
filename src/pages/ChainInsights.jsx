@@ -12,9 +12,11 @@ import TermStructureChart from '@/components/insights/TermStructureChart';
 import OpenInterestChart from '@/components/insights/OpenInterestChart';
 import MaxPainChart from '@/components/insights/MaxPainChart';
 import { fetchOptionChain, fetchPriceHistory, formatExpiration } from '@/api/marketData';
+import { useUrlState, asString, asBoolean, asEnum } from '@/lib/useUrlState';
 import {
   listExpirations, atmIV, smile, termStructure, riskReversal25, openInterestByStrike,
   putCallRatio, maxPain, realizedVol, expectedMove, volatilityVerdict, termVerdict, skewVerdict,
+  CONFIDENCE_LEVELS,
 } from '@/lib/optionAnalytics';
 
 const HISTORY_WINDOWS = [
@@ -27,19 +29,40 @@ const HISTORY_WINDOWS = [
 
 const DEFAULT_TICKER = 'MSTR';
 
+// Everything a reader needs to see the same page, and nothing derived from the
+// chain — quotes should be fresh when a shared link is opened later.
+const URL_SPEC = {
+  ticker: asString(DEFAULT_TICKER),
+  expiration: { ...asString(''), param: 'exp' },
+  confidence: { ...asEnum(CONFIDENCE_LEVELS.map((l) => l.id), '68'), param: 'ci' },
+  historyWindow: { ...asEnum(HISTORY_WINDOWS.map((w) => w.id), '6m'), param: 'window' },
+  showRealizedCone: { ...asBoolean(false), param: 'rv' },
+  oiMetric: { ...asEnum(['oi', 'volume'], 'oi'), param: 'oi' },
+};
+
+const URL_DEFAULTS = {
+  ticker: DEFAULT_TICKER,
+  expiration: '',
+  confidence: '68',
+  historyWindow: '6m',
+  showRealizedCone: false,
+  oiMetric: 'oi',
+};
+
 export default function ChainInsights() {
-  const [ticker, setTicker] = useState(DEFAULT_TICKER);
+  const [view, setView] = useUrlState(URL_SPEC, URL_DEFAULTS);
+  const { ticker, expiration, confidence, historyWindow, showRealizedCone, oiMetric } = view;
+  const set = (patch) => setView((prev) => ({ ...prev, ...patch }));
+
   const [chain, setChain] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const [expiration, setExpiration] = useState(null);
-  const [confidence, setConfidence] = useState('68');
-  const [showRealizedCone, setShowRealizedCone] = useState(false);
-  const [historyWindow, setHistoryWindow] = useState('6m');
-
-  const load = useCallback(async (symbol, { force = false } = {}) => {
+  // `keepExpiration` is what makes a shared link land on the right expiry: on a
+  // deliberate ticker change the old expiration is meaningless, but on first
+  // load it came from the URL and must survive.
+  const load = useCallback(async (symbol, { force = false, keepExpiration = null } = {}) => {
     setLoading(true);
     setError(null);
     try {
@@ -52,11 +75,14 @@ export default function ChainInsights() {
       setChain(nextChain);
       setHistory(nextHistory);
 
-      // Default to the nearest expiration that is a month or more out: the very
-      // front week is dominated by expiring noise and makes every chart spiky.
       const expirations = listExpirations(nextChain);
+      const requested = keepExpiration && expirations.some((e) => e.expiration === keepExpiration)
+        ? keepExpiration
+        : null;
+      // Otherwise default to the nearest expiration a month or more out: the very
+      // front week is dominated by expiring noise and makes every chart spiky.
       const preferred = expirations.find((e) => e.dte >= 25) || expirations[0];
-      setExpiration(preferred ? preferred.expiration : null);
+      set({ expiration: requested || (preferred ? preferred.expiration : '') });
     } catch (err) {
       console.error('Error loading chain insights:', err);
       setChain(null);
@@ -65,14 +91,19 @@ export default function ChainInsights() {
     } finally {
       setLoading(false);
     }
+    // `set` is a stable wrapper around the state setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Mount only: the ticker and expiration come from the URL when the link was
+  // shared, and from the defaults otherwise.
   useEffect(() => {
-    load(DEFAULT_TICKER);
-  }, [load]);
+    load(view.ticker, { keepExpiration: view.expiration || null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleTicker = (symbol) => {
-    setTicker(symbol);
+    set({ ticker: symbol, expiration: '' });
     load(symbol);
   };
 
@@ -137,7 +168,7 @@ export default function ChainInsights() {
 
           <div className="space-y-2">
             <Label className="text-sm font-medium text-slate-700">Expiration</Label>
-            <Select value={expiration || ''} onValueChange={setExpiration} disabled={!expirations.length}>
+            <Select value={expiration || ''} onValueChange={(value) => set({ expiration: value })} disabled={!expirations.length}>
               <SelectTrigger>
                 <SelectValue placeholder="Select expiration" />
               </SelectTrigger>
@@ -245,7 +276,7 @@ export default function ChainInsights() {
                     <button
                       key={w.id}
                       type="button"
-                      onClick={() => setHistoryWindow(w.id)}
+                      onClick={() => set({ historyWindow: w.id })}
                       className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
                         historyWindow === w.id ? 'text-white' : 'text-slate-600 hover:bg-slate-100'
                       }`}
@@ -264,9 +295,9 @@ export default function ChainInsights() {
                 dte={dte}
                 expiration={expirationLabel}
                 confidence={confidence}
-                onConfidenceChange={setConfidence}
+                onConfidenceChange={(value) => set({ confidence: value })}
                 showRealizedCone={showRealizedCone}
-                onToggleRealizedCone={() => setShowRealizedCone((v) => !v)}
+                onToggleRealizedCone={() => set({ showRealizedCone: !showRealizedCone })}
               />
             </div>
           ) : (
@@ -302,6 +333,8 @@ export default function ChainInsights() {
               spot={spot}
               ratios={analytics.ratios}
               expirationLabel={expirationLabel}
+              metric={oiMetric}
+              onMetricChange={(value) => set({ oiMetric: value })}
             />
             <MaxPainChart
               maxPain={analytics.pain}

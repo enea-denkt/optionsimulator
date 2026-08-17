@@ -5,6 +5,7 @@ import OptionsFilters from '../components/simulator/OptionsFilters';
 import EvolutionChart from '../components/simulator/EvolutionChart';
 import MetricsSummary from '../components/simulator/MetricsSummary';
 import { Activity, TrendingUp } from 'lucide-react';
+import { useUrlState, asString, asNumber, asNullableNumber, asEnum } from '@/lib/useUrlState';
 
 function payoffAtExpiration(spot, strike, optionType = 'call') {
   return optionType === 'call'
@@ -152,23 +153,56 @@ function generateEvolutionData(filters) {
   return { data, initialValue: initialTheoreticalValue };
 }
 
+const DEFAULT_FILTERS = {
+  ticker: '',
+  currentPrice: 0,
+  strikePrice: 175,
+  optionType: 'call',
+  selectedContract: '', // Initially no contract selected
+  selectedOcc: '',      // OCC symbol — the contract's unique identity
+  daysToExpiration: 90,
+  scenario: 'neutral',
+  expectedPriceChange: 5,
+  currentIV: 30,
+  expectedIVChange: 0,
+  riskFreeRate: 4,
+  premiumPaid: 0,
+  entryPremium: null,
+  simulationMode: 'ticker'
+};
+
+/**
+ * What travels in the URL.
+ *
+ * In ticker mode the contract is carried as its OCC symbol alone: strike,
+ * expiration, premium and IV are re-read from the live chain when the link is
+ * opened, so a shared link shows current quotes rather than a snapshot of
+ * whatever they were when it was copied. `selectedContract` is a display label
+ * derived from the same symbol, so it stays out.
+ *
+ * In free mode there is no chain to read from, so the typed numbers travel
+ * instead. They are listed unconditionally — a parameter only appears when it
+ * differs from the default, so ticker-mode links do not carry them anyway.
+ */
+const URL_SPEC = {
+  simulationMode: { ...asEnum(['ticker', 'free'], 'ticker'), param: 'mode' },
+  ticker: asString(''),
+  optionType: { ...asEnum(['call', 'put'], 'call'), param: 'type' },
+  selectedOcc: { ...asString(''), param: 'occ' },
+  currentPrice: { ...asNumber(0), param: 'price' },
+  strikePrice: { ...asNumber(175), param: 'strike' },
+  premiumPaid: { ...asNumber(0), param: 'premium' },
+  entryPremium: { ...asNullableNumber(null), param: 'entry' },
+  daysToExpiration: { ...asNumber(90), param: 'dte' },
+  currentIV: { ...asNumber(30), param: 'iv' },
+  expectedPriceChange: { ...asNumber(5), param: 'move' },
+  expectedIVChange: { ...asNumber(0), param: 'ivmove' },
+  riskFreeRate: { ...asNumber(4), param: 'rate' },
+  scenario: { ...asEnum(['bullish', 'neutral', 'bearish'], 'neutral'), param: 'scenario' },
+};
+
 export default function OptionsSimulator() {
-  const [filters, setFilters] = useState({
-    ticker: '',
-    currentPrice: 0,
-    strikePrice: 175,
-    optionType: 'call',
-    selectedContract: '', // Initially no contract selected
-    daysToExpiration: 90,
-    scenario: 'neutral',
-    expectedPriceChange: 5,
-    currentIV: 30,
-    expectedIVChange: 0,
-    riskFreeRate: 4,
-    premiumPaid: 0,
-    entryPremium: null,
-    simulationMode: 'ticker'
-  });
+  const [filters, setFilters] = useUrlState(URL_SPEC, DEFAULT_FILTERS);
 
   const [simulationData, setSimulationData] = useState({ data: [], initialValue: 0 });
 

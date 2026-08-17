@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
@@ -15,9 +14,11 @@ const PUT = '#FF2300';
  * Volume is what changed hands today. They answer different questions, so the
  * card toggles between them rather than picking one.
  */
-export default function OpenInterestChart({ data, spot, ratios, expirationLabel }) {
-  const [metric, setMetric] = useState('oi');
-  const isOI = metric === 'oi';
+export default function OpenInterestChart({ data, spot, ratios, expirationLabel, metric, onMetricChange }) {
+  // Controlled from the page so the choice lands in the URL with the rest of the
+  // view; falls back to open interest when rendered without a controller.
+  const active = metric || 'oi';
+  const isOI = active === 'oi';
 
   const callKey = isOI ? 'callOI' : 'callVolume';
   const putKey = isOI ? 'putOI' : 'putVolume';
@@ -60,11 +61,11 @@ export default function OpenInterestChart({ data, spot, ratios, expirationLabel 
             <button
               key={opt.id}
               type="button"
-              onClick={() => setMetric(opt.id)}
+              onClick={() => onMetricChange?.(opt.id)}
               className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-                metric === opt.id ? 'text-white' : 'text-slate-600 hover:bg-slate-100'
+                active === opt.id ? 'text-white' : 'text-slate-600 hover:bg-slate-100'
               }`}
-              style={metric === opt.id ? { backgroundColor: '#2188e6' } : undefined}
+              style={active === opt.id ? { backgroundColor: '#2188e6' } : undefined}
             >
               {opt.label}
             </button>

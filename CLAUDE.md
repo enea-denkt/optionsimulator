@@ -136,6 +136,32 @@ GitHub Pages has no server-side routing, so `npm run build` copies `index.html` 
 `404.html`. That is what lets `/optionsimulator/insights` load on a direct visit or
 a refresh instead of 404ing. Keep that step in the build script.
 
+**Every page keeps its controls in the URL**, so any view can be shared by copying
+the address bar. Use `useUrlState` from `src/lib/useUrlState.js` instead of
+`useState` for whatever the user can change:
+
+```js
+const URL_SPEC = { ticker: asString(''), dte: { ...asNumber(90), param: 'dte' } };
+const [state, setState] = useUrlState(URL_SPEC, DEFAULTS);
+```
+
+Rules that keep shared links working:
+
+* **Put inputs in the URL, not derived values.** The simulator carries the OCC
+  symbol and re-reads strike, premium and IV from the live chain on load, so a
+  link opened next week shows current quotes rather than stale ones.
+* **Fetch on mount from the URL value, and do not clobber it.** A page that
+  resets its selection after loading data will throw away what the link carried;
+  `loadChain(..., { preserveSelection: true })` in OptionsFilters is the pattern.
+* Codecs (`asString`, `asNumber`, `asNullableNumber`, `asBoolean`, `asEnum`) fall
+  back to the default when a value is unusable, so a hand-edited URL cannot push
+  `NaN` into state. `asEnum` is the safe choice for anything with fixed options.
+* Values equal to the default are omitted, writes are debounced and use
+  `replace`, and unrelated params (`utm_source`, …) survive.
+
+`hydrateFromParams` and `serializeToParams` are exported as pure functions — test
+URL behaviour against those rather than trying to drive the hook.
+
 ## Market data
 
 All access is isolated in `src/api/marketData.js`. Two things that are easy to get
