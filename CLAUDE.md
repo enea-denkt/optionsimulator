@@ -1,0 +1,132 @@
+# CLAUDE.md — optionsimulator
+
+Operational instructions for this repo. The *reasoning* behind these choices is in
+[learnings.md](learnings.md); this file is the "what to run" so it never has to be
+re-derived or guessed.
+
+## Repo facts
+
+| | |
+| --- | --- |
+| GitHub repo | `enea-denkt/optionsimulator` |
+| Remote name | `enea` |
+| Source branch | `main` |
+| **Branch the live site serves** | **`gh-pages`** |
+| Live URL | https://enea-denkt.github.io/optionsimulator/ |
+| Market-data worker | https://market-proxy.enea-denkt.workers.dev |
+
+**Pushing to `main` does not change the live site.** `main` is source only. The
+site is whatever `gh-pages` contains. These two are updated separately and drift
+apart routinely — always state which one you changed.
+
+## SSH: port 22 is refused on this machine
+
+`git push enea main` fails with `ssh: connect to host github.com port 22:
+Connection refused`. This has recurred across sessions; it is not transient.
+Use GitHub's 443 endpoint, which uses the same key and identity:
+
+```bash
+git push ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git main
+```
+
+## Deploying to the live site
+
+**Use the local build + force-push route.** This is what has actually been used for
+every deploy so far. Do not switch to the Actions route without being asked.
+
+```bash
+cd "/Users/lucadeangelis/github/Gammalift Option Simulator"
+
+# 1. Build with the worker URL. Without VITE_MARKET_PROXY the app silently falls
+#    back to public CORS proxies and the live site's data breaks.
+rm -rf dist
+VITE_MARKET_PROXY=https://market-proxy.enea-denkt.workers.dev npm run build
+
+# 2. Check the artifact BEFORE publishing — a missing worker URL is the one
+#    failure that looks fine locally and breaks in production.
+grep -oh 'market-proxy[^"]*workers\.dev' dist/assets/*.js   # must print the URL
+
+# 3. Publish.
+cd dist
+touch .nojekyll
+git init -q
+git config user.name "lucadeangelisas24"
+git config user.email "luca.deangelis@satyadata.com"
+git add -A
+git commit -q -m "Deploy $(git -C .. rev-parse --short HEAD)"
+git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages
+```
+
+### Verifying a deploy
+
+GitHub Pages takes ~20–30s. Do not report success without checking the *served*
+bundle — confirm a string that only exists in the new code:
+
+```bash
+curl -s https://enea-denkt.github.io/optionsimulator/ -o /tmp/live.html
+JS=$(grep -o 'assets/[^"]*\.js' /tmp/live.html | head -1)
+curl -s "https://enea-denkt.github.io/optionsimulator/$JS" | grep -c '<new-symbol>'
+```
+
+### Rollback
+
+```bash
+git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git <sha>:gh-pages
+```
+
+Deploy history (`gh-pages` sha → built from `main` sha):
+
+* `0585554` → `a2e0767` — 2026-08-16, first deploy
+* `7827352` → `3821285` — 2026-08-17, OCC-symbol contract identity
+
+## Which route was used for a past deploy
+
+Read the `gh-pages` commit author. **The author identifies the route** — this is
+the fastest way to answer "did I deploy via Actions?" and it needs no `gh` auth:
+
+```bash
+git fetch ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git gh-pages
+git log -1 --format='%an %s' FETCH_HEAD
+```
+
+* `lucadeangelisas24` → local build + force-push
+* `github-actions[bot]` → the workflow ran
+
+## The GitHub Actions route (not currently used)
+
+`.github/workflows/deploy.yml` exists and is **`workflow_dispatch` only** on
+purpose, so a push cannot silently replace the live site.
+
+It requires the repo variable `MARKET_PROXY` (Settings → Secrets and variables →
+Actions → Variables) set to the worker URL. **Without it the build succeeds and
+the live site's data breaks.**
+
+**Do not claim whether that variable is set — it cannot be read from here.** `gh`
+is not authenticated on this machine (`gh variable list` returns "please run
+`gh auth login`"). As of 2026-08-17 its state is *unverified*. It is irrelevant to
+the local build route above, which passes the URL on the command line.
+
+## Market data
+
+All access is isolated in `src/api/marketData.js`. Two things that are easy to get
+wrong and have already caused bugs:
+
+* **A contract's identity is its OCC symbol**, never `strike + expiration` — those
+  collide across series (`ASST`/`ASST1`/`ASST2`, and `SPX`/`SPXW`). Look contracts
+  up with `findContractByOcc(chain, occSymbol)`.
+* **Adjusted series are filtered out** in `normalizeChain`, because the binomial
+  model assumes 100 ordinary shares per contract. Adjusted roots end in a *digit*
+  (`ASST1`); a trailing *letter* (`SPXW`, `NDXP`) is an ordinary separate series and
+  must be kept. See learnings.md §7.
+
+## Local development
+
+```bash
+npm run dev     # http://localhost:5173/optionsimulator/
+```
+
+The Vite dev proxy (`/cboe` → `cdn.cboe.com`, see `vite.config.js`) stands in for
+the worker locally, so `VITE_MARKET_PROXY` is not needed in dev.
+
+`npm run lint` reports ~60 pre-existing `react/prop-types` errors. Compare counts
+before and after a change rather than expecting zero.

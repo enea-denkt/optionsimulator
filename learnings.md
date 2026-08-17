@@ -214,12 +214,27 @@ Actions route additionally needs the `MARKET_PROXY` repo variable set
 (Settings → Secrets and variables → Actions → Variables); **without it the build
 silently falls back to the public proxies and the live site's data breaks.**
 
-* Deployed commit: `0585554` (built from `main` @ `a2e0767`)
-* **Rollback:** `git push -f <remote> b126d4a:gh-pages` restores the previous site
+Every deploy so far has used the local route. Runbook lives in
+[CLAUDE.md](CLAUDE.md) so it does not have to be reconstructed each time.
 
-**SSH gotcha:** port 22 to github.com started returning *Connection refused*
-mid-session on this machine, having worked minutes earlier. GitHub's alternate
-endpoint works and uses the same key:
+| `gh-pages` | built from `main` | date |
+| --- | --- | --- |
+| `0585554` | `a2e0767` | 2026-08-16 |
+| `7827352` | `3821285` | 2026-08-17 |
+
+**Rollback:** `git push -f <remote> <older-gh-pages-sha>:gh-pages`
+
+**How to tell which route a past deploy used, without `gh` auth:** read the
+`gh-pages` commit author. The workflow commits as `github-actions[bot]`; a local
+force-push carries your own name. That single field settles the question — worth
+knowing because `gh` is *not* authenticated on this machine, so repo variables and
+workflow runs cannot be inspected at all. Do not assert the state of the
+`MARKET_PROXY` variable from memory; it is unverifiable from here.
+
+**SSH gotcha:** port 22 to github.com returns *Connection refused* on this machine.
+It first appeared mid-session having worked minutes earlier, and has recurred every
+session since, so treat it as the normal state rather than a blip. GitHub's
+alternate endpoint works and uses the same key:
 
 ```bash
 git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages
@@ -230,8 +245,9 @@ git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-
 * **Cboe's terms (§4) are now being exercised in production**, not in testing. The
   IP-block risk is real rather than theoretical; migrating to a licensed feed
   touches only the worker's upstream and one normalizer in `marketData.js`.
-* **`MARKET_PROXY` repo variable is not set yet**, so deploys must be run locally
-  until it is.
+* **The Actions deploy route has never been exercised.** Whether the `MARKET_PROXY`
+  repo variable is set is *unknown and not checkable from this machine* — `gh` is
+  unauthenticated. Deploys run locally, which does not depend on it.
 * **Feed cadence during market hours is still unmeasured** (§5).
 * The stock-return benchmark shares one Y axis with the option's net return. That
   is correct — same units — but when the option returns thousands of percent the
