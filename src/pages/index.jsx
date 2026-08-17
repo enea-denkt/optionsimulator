@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom';
 import Layout from './Layout.jsx';
 import OptionsSimulator from './OptionsSimulator';
 import ChainInsights from './ChainInsights';
+import TickerComparison from './TickerComparison';
 
 /**
  * Routes are relative to Vite's `base` (applied as the router basename in
@@ -19,6 +20,7 @@ export default function Pages() {
         <Route path="/index.html" element={<OptionsSimulator />} />
         <Route path="/simulatorapp.html" element={<OptionsSimulator />} />
         <Route path="/insights" element={<ChainInsights />} />
+        <Route path="/compare" element={<TickerComparison />} />
         {/* Unknown paths fall back to the simulator rather than a blank page. */}
         <Route path="*" element={<OptionsSimulator />} />
       </Routes>

@@ -196,7 +196,42 @@ cases across the front week, a mid expiry and an 851-day LEAP. It catches exactl
 the class of bug that unit-testing pure functions misses: a chart reaching into an
 array that is empty for one expiration. It cannot catch layout or interaction.
 
-## 9. Deployment specifics for GitHub Pages
+## 9. There is no per-ticker implied-volatility history here
+
+Wanted for IV Rank; not available. Every candidate endpoint on the free feed
+returns 403 — `historical_iv`, `charts/iv`, `iv_history`, `volatility`,
+`term_structure`. The delayed-quotes feed publishes today's IV and nothing else.
+
+What *does* have history is the volatility **indices**, and they are keyless:
+
+| Series | Bars | From |
+| --- | --- | --- |
+| `_VIX` | 9,251 | 1990 |
+| `_VIX9D` / `_VIX3M` / `_VVIX` | 3,900–5,100 | 2006–2011 |
+| `_VXAPL`, `_VXAZN` | 3,919 | 2011 — only a handful of single names |
+
+So the page ships two honest substitutes instead of a mislabelled one: the
+ticker's **realized** volatility rank from its own closes, and **VIX** as the
+market-wide **implied** rank. Real per-ticker IV rank needs a licensed feed
+(ORATS, marketdata.app, Polygon) or recording this app's own IV reading daily
+until a year accumulates.
+
+**Rank and percentile are different, and the difference matters.** Rank is
+`(now − low) / (high − low)`, so one spike a year ago holds every later reading
+down until it rolls out of the window. Percentile is the share of days that
+closed below today, which uses the whole distribution. Measured live: KO sits at
+rank 77.9 but percentile 89.7; MSTR at rank 12.2 but percentile 8.7. Both are
+shown, because a single number would hide the disagreement.
+
+**Comparing option prices across names needs a common sampling point.** Dollar
+premiums are meaningless across underlyings, and so are equal strikes. The
+comparison page samples each chain at the same delta (default) or the same
+moneyness, at a similar time to expiry. Delta is the better default: equal
+moneyness on a calm name and a volatile one picks options with very different
+odds of paying out, while equal delta picks options the market considers equally
+likely to finish in the money.
+
+## 10. Deployment specifics for GitHub Pages
 
 * `base` must match the repo path (`/optionsimulator/`), and the router `basename`
   must follow it — `import.meta.env.BASE_URL` keeps them in sync instead of the
@@ -206,7 +241,7 @@ array that is empty for one expiration. It cannot catch layout or interaction.
 * The deploy workflow is **manual trigger only** (`workflow_dispatch`) so a push
   cannot silently replace the live site.
 
-## 10. Testing notes
+## 11. Testing notes
 
 Playwright against the real dev server caught what unit tests would have missed:
 the empty contract list, the wrong base path, and the CORS failures in a genuine
@@ -218,7 +253,7 @@ One harness trap: the adapter initially dropped request headers, which made the
 origin allowlist look broken when it was fine. Verify the test harness before
 trusting a negative result.
 
-## 11. Deploying the worker (Cloudflare dashboard)
+## 12. Deploying the worker (Cloudflare dashboard)
 
 Workers & Pages → Create → **"Start with Hello World!"**. The neighbouring options
 are both wrong for this: *Connect GitHub* tries to build the whole Vite app and
@@ -241,7 +276,7 @@ Live at **https://market-proxy.enea-denkt.workers.dev**. Verified against it:
 The symbol directory is the slow one, which is why it is fetched lazily on the
 first search and kept in memory rather than re-fetched per keystroke.
 
-## 12. Publishing, as actually performed
+## 13. Publishing, as actually performed
 
 GitHub Pages serves the **`gh-pages` branch**. Pushing source to `main` changes
 nothing on the live site — that surprise is worth remembering.
@@ -278,7 +313,7 @@ alternate endpoint works and uses the same key:
 git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages
 ```
 
-## 13. Still open
+## 14. Still open
 
 * **Cboe's terms (§4) are now being exercised in production**, not in testing. The
   IP-block risk is real rather than theoretical; migrating to a licensed feed

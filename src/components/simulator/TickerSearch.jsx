@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Check, ChevronsUpDown, Loader2, Search } from "lucide-react";
 import { normalizeSymbol, searchSymbols } from "@/api/marketData";
 
-export default function TickerSearch({ value, onSelect, disabled }) {
+export default function TickerSearch({ value, onSelect, disabled, placeholder = 'Search ticker...' }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -69,7 +69,7 @@ export default function TickerSearch({ value, onSelect, disabled }) {
           disabled={disabled}
           className={`w-full justify-between text-base ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          {value || "Search ticker..."}
+          {value || placeholder}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
