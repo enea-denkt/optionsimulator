@@ -106,6 +106,36 @@ is not authenticated on this machine (`gh variable list` returns "please run
 `gh auth login`"). As of 2026-08-17 its state is *unverified*. It is irrelevant to
 the local build route above, which passes the URL on the command line.
 
+## The worker must be redeployed when ALLOWED_PATHS changes
+
+`proxy/cloudflare-worker.js` lives in this repo but **runs on Cloudflare**, so
+editing it here changes nothing in production. Adding a Cboe endpoint means
+adding a regex to `ALLOWED_PATHS` *and* re-pasting the file into the Cloudflare
+dashboard (Workers & Pages → the worker → Edit code → Deploy).
+
+Dev hides this: the Vite proxy forwards any `/cboe/*` path, so a new endpoint
+works locally while 404ing on the live site. Check the deployed worker directly:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -H "Origin: https://enea-denkt.github.io" \
+  "https://market-proxy.enea-denkt.workers.dev/api/global/delayed_quotes/charts/historical/MSTR.json"
+```
+
+404 means the deployed worker predates the current `ALLOWED_PATHS`.
+
+## Adding a page
+
+Routes live in `src/pages/index.jsx`; the menu is the `NAV_ITEMS` array in
+`src/pages/Layout.jsx`, which feeds both the desktop bar and the mobile sheet.
+
+**Do not add a `<Routes>` block to `src/main.jsx`.** It wraps the app and a route
+table there shadows the real one, so a new page renders nothing. `main.jsx` should
+only supply `BrowserRouter` and the basename.
+
+GitHub Pages has no server-side routing, so `npm run build` copies `index.html` to
+`404.html`. That is what lets `/optionsimulator/insights` load on a direct visit or
+a refresh instead of 404ing. Keep that step in the build script.
+
 ## Market data
 
 All access is isolated in `src/api/marketData.js`. Two things that are easy to get

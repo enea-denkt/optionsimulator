@@ -158,7 +158,45 @@ model prices `max(S − K, 0)` per share and assumes 100 ordinary shares, so on
 real and everything derived from them wrong — worse than not offering them. They are
 barely tradeable anyway (0 volume across the board). ASST drops 888 → 734 contracts.
 
-## 8. Deployment specifics for GitHub Pages
+## 8. Building the insights page
+
+**Cboe serves daily OHLCV too**, at `/api/global/delayed_quotes/charts/historical/
+{SYMBOL}.json` — MSTR returns 5,691 bars back to 2004, keyless like the rest. That
+is what makes realized volatility computable, and comparing it against implied is
+the most useful thing on the page: it answers "are options expensive right now?",
+which no single chain number does.
+
+**Validating the maths against the source.** Independently computing ATM IV by
+interpolating the smile at spot gave 65.82% where Cboe's own `iv30` field said
+66.13% — a 0.3 vol point gap on a different horizon. Agreement that close means the
+interpolation, the strike handling and the units are all right. Worth doing for any
+derived metric where the provider also publishes its own version.
+
+A second check that caught nothing but would have caught a lot: 25-delta skew is
+**+1.26 vol points on SPX** and **−3.25 on MSTR**. Index options carry persistent
+downside skew (crash protection) while high-beta single names skew to calls
+(speculation), so the sign flip is the expected one. A metric that produces the
+right sign on two known-opposite cases is probably wired correctly.
+
+**Same-date series collide, again.** §7 was about strike + expiration not
+identifying a *contract*; the same root cause bites analytics differently. On the
+third Friday, SPX (AM-settled) and SPXW (PM-settled) both list — 499 strikes with
+two contracts each. A strike-keyed map silently keeps whichever came last, and
+summing open interest adds two different products together. `contractsFor` now
+keeps one contract per strike per side, choosing the higher open interest.
+
+**`<Routes>` in main.jsx shadowed the route table.** main.jsx wrapped the app in a
+route list containing only the simulator paths, so `/insights` matched nothing and
+rendered blank while every module compiled fine. Routing belongs in one place.
+
+**Verifying React without a browser.** Playwright was not available this session.
+Building the components with `vite build --ssr` and rendering them through
+`renderToString` against a real Cboe payload exercised the full render path — 18
+cases across the front week, a mid expiry and an 851-day LEAP. It catches exactly
+the class of bug that unit-testing pure functions misses: a chart reaching into an
+array that is empty for one expiration. It cannot catch layout or interaction.
+
+## 9. Deployment specifics for GitHub Pages
 
 * `base` must match the repo path (`/optionsimulator/`), and the router `basename`
   must follow it — `import.meta.env.BASE_URL` keeps them in sync instead of the
@@ -168,7 +206,7 @@ barely tradeable anyway (0 volume across the board). ASST drops 888 → 734 cont
 * The deploy workflow is **manual trigger only** (`workflow_dispatch`) so a push
   cannot silently replace the live site.
 
-## 9. Testing notes
+## 10. Testing notes
 
 Playwright against the real dev server caught what unit tests would have missed:
 the empty contract list, the wrong base path, and the CORS failures in a genuine
@@ -180,7 +218,7 @@ One harness trap: the adapter initially dropped request headers, which made the
 origin allowlist look broken when it was fine. Verify the test harness before
 trusting a negative result.
 
-## 10. Deploying the worker (Cloudflare dashboard)
+## 11. Deploying the worker (Cloudflare dashboard)
 
 Workers & Pages → Create → **"Start with Hello World!"**. The neighbouring options
 are both wrong for this: *Connect GitHub* tries to build the whole Vite app and
@@ -203,7 +241,7 @@ Live at **https://market-proxy.enea-denkt.workers.dev**. Verified against it:
 The symbol directory is the slow one, which is why it is fetched lazily on the
 first search and kept in memory rather than re-fetched per keystroke.
 
-## 11. Publishing, as actually performed
+## 12. Publishing, as actually performed
 
 GitHub Pages serves the **`gh-pages` branch**. Pushing source to `main` changes
 nothing on the live site — that surprise is worth remembering.
@@ -240,7 +278,7 @@ alternate endpoint works and uses the same key:
 git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages
 ```
 
-## 12. Still open
+## 13. Still open
 
 * **Cboe's terms (§4) are now being exercised in production**, not in testing. The
   IP-block risk is real rather than theoretical; migrating to a licensed feed

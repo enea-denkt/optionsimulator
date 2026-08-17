@@ -31,6 +31,8 @@ const ALLOWED_PATHS = [
   /^\/api\/global\/delayed_quotes\/options\/[A-Z0-9_.-]{1,24}\.json$/,
   /^\/api\/global\/delayed_quotes\/quotes\/[A-Z0-9_.-]{1,24}\.json$/,
   /^\/api\/global\/delayed_quotes\/symbol_book\/symbol-book\.json$/,
+  // Daily OHLCV history, for the price chart and realized volatility.
+  /^\/api\/global\/delayed_quotes\/charts\/historical\/[A-Z0-9_.-]{1,24}\.json$/,
 ];
 
 // Sites allowed to call this worker. Note that a browser sends Origin honestly

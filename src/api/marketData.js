@@ -26,6 +26,7 @@ const CBOE_PATHS = {
   chain: (symbol) => `/api/global/delayed_quotes/options/${symbol}.json`,
   quote: (symbol) => `/api/global/delayed_quotes/quotes/${symbol}.json`,
   symbolBook: () => '/api/global/delayed_quotes/symbol_book/symbol-book.json',
+  history: (symbol) => `/api/global/delayed_quotes/charts/historical/${symbol}.json`,
 };
 
 // Cboe prefixes cash indices with an underscore.
@@ -291,6 +292,48 @@ export async function fetchQuote(rawSymbol) {
  */
 export function findContractByOcc(chain, occSymbol) {
   return chain?.bySymbol?.get(occSymbol) || null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Daily price history
+ * ------------------------------------------------------------------ */
+
+const historyCache = new Map(); // symbol -> { fetchedAt, history }
+const HISTORY_TTL_MS = 30 * 60 * 1000; // daily bars; refetching often buys nothing
+
+/**
+ * Daily OHLCV for a symbol, oldest first. Cboe serves the full listed history
+ * (MSTR goes back to 2004), which is far more than any chart needs, so callers
+ * pass `days` to trim it. Realized volatility is computed from these closes.
+ */
+export async function fetchPriceHistory(rawSymbol, { days = null, force = false } = {}) {
+  const symbol = normalizeSymbol(rawSymbol);
+  if (!symbol) throw new Error('No ticker provided');
+
+  const cached = historyCache.get(symbol);
+  let history = !force && cached && Date.now() - cached.fetchedAt < HISTORY_TTL_MS
+    ? cached.history
+    : null;
+
+  if (!history) {
+    const payload = await fetchThroughGateway(CBOE_PATHS.history(cboeSymbol(symbol)), { timeoutMs: 30000 });
+    history = (payload?.data || [])
+      .map((bar) => ({
+        date: bar.date,
+        open: Number(bar.open) || 0,
+        high: Number(bar.high) || 0,
+        low: Number(bar.low) || 0,
+        close: Number(bar.close) || 0,
+        volume: Number(bar.volume) || 0,
+      }))
+      .filter((bar) => bar.date && bar.close > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (!history.length) throw new Error(`No price history available for ${symbol}`);
+    historyCache.set(symbol, { fetchedAt: Date.now(), history });
+  }
+
+  return days && days < history.length ? history.slice(-days) : history;
 }
 
 /* ------------------------------------------------------------------ *
