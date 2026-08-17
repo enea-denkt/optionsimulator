@@ -19,6 +19,28 @@ re-derived or guessed.
 site is whatever `gh-pages` contains. These two are updated separately and drift
 apart routinely — always state which one you changed.
 
+## What the app contains
+
+A multi-page dashboard, not a single tool. Routes live in `src/pages/index.jsx`;
+the menu is the `NAV_ITEMS` array in `src/pages/Layout.jsx`.
+
+| Route | Page | What it answers |
+| --- | --- | --- |
+| `/` | Options Simulator | How does this position behave under a scenario? |
+| `/insights` | Chain Insights | What is the chain pricing for one name? |
+| `/compare` | Compare Companies | Which of these names has the expensive options? |
+
+Shared building blocks, all pure and node-testable:
+
+| Module | Holds |
+| --- | --- |
+| `src/api/marketData.js` | every network call; chains, quotes, price history, symbol search |
+| `src/lib/optionAnalytics.js` | smile, term structure, max pain, expected move, realized vol |
+| `src/lib/volatilityHistory.js` | rank and percentile, rolling series, VIX helpers |
+| `src/lib/optionComparison.js` | cross-name contract matching and the comparison metrics |
+| `src/lib/useUrlState.js` | query-string state, shared by every page |
+| `src/lib/tickerMemory.js` | the ticker carried between pages for the session |
+
 ## SSH: port 22 is refused on this machine
 
 `git push enea main` fails with `ssh: connect to host github.com port 22:
@@ -79,6 +101,31 @@ Deploy history (`gh-pages` sha → built from `main` sha):
 * `0585554` → `a2e0767` — 2026-08-16, first deploy
 * `7827352` → `3821285` — 2026-08-17, OCC-symbol contract identity
 
+## When gh-pages is right but the site is stale
+
+Symptom: `gh-pages` holds the commit you just pushed, the tree is correct, and
+the live site still serves the previous bundle.
+
+**That is a publish failure, not a build problem. Do not rebuild.** The tell is
+`last-modified` on the live index not moving:
+
+```bash
+curl -s -D - -o /dev/null https://enea-denkt.github.io/optionsimulator/ | grep -i last-modified
+```
+
+Seen on 2026-08-17: GitHub's own `pages build and deployment` workflow failed
+three times because it could not download `actions/deploy-pages` from
+codeload.github.com — `429 Too Many Requests`, then an internal server error.
+Nothing was wrong with the artifact.
+
+The fix is to run it again: any push to `gh-pages` (an empty commit is enough) or
+"Re-run all jobs" in the Actions tab. It cleared about fifteen minutes later.
+
+```bash
+cd dist && git commit --allow-empty -m "Retry Pages publish" \
+  && git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages
+```
+
 ## Which route was used for a past deploy
 
 Read the `gh-pages` commit author. **The author identifies the route** — this is
@@ -105,6 +152,15 @@ the live site's data breaks.**
 is not authenticated on this machine (`gh variable list` returns "please run
 `gh auth login`"). As of 2026-08-17 its state is *unverified*. It is irrelevant to
 the local build route above, which passes the URL on the command line.
+
+**`gh auth login` cannot be run from this session.** The `--web` flow needs a TTY
+to prompt before opening a browser; with no TTY it hangs silently without even
+printing the one-time code. The user has to run it in their own terminal.
+
+**Always ask which GitHub account first.** Several identities exist on this
+machine and the right one varies by repo — `enea-denkt` here, others elsewhere.
+The browser flow silently adopts whatever account the browser session holds, and
+HTTPS remotes on this machine default to a different account.
 
 ## The worker must be redeployed when ALLOWED_PATHS changes
 

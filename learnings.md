@@ -231,7 +231,40 @@ moneyness on a calm name and a volatile one picks options with very different
 odds of paying out, while equal delta picks options the market considers equally
 likely to finish in the money.
 
-## 10. Deployment specifics for GitHub Pages
+## 10. Comparing option prices across companies
+
+Dollar premiums do not compare. A $9 option on a $95 stock and a $9 option on a
+$300 stock are different trades, and so are two contracts picked at whatever
+strikes happen to be listed. Each name has to be sampled at the *same point on
+its own surface*.
+
+**Delta is the better matcher, and it is the default.** Equal moneyness on a calm
+name and a volatile one picks options with very different odds of paying out;
+equal delta picks options the market considers equally likely to finish in the
+money, which is closer to what "the same trade" means.
+
+**"Expensive" has three different answers, so all three are reported.** Implied
+volatility is the normalised price of volatility. Premium as a share of spot is
+the cash cost. Breakeven move against implied move is what a directional buyer
+feels. They disagree: measured live, KO was cheapest on IV *and* had its
+breakeven furthest inside the expected range (0.73x against 0.87–0.90x for the
+others) — a fact IV alone does not show.
+
+**Beating the stock is a different bar from breaking even, and the direction of
+the difference flips with the side.** Setting the option's return on capital
+equal to the stock's return gives `S* = S0*K / (S0 - P)` for a call, with the
+denominator becoming `S0 + P` for a put. For a call the shares are gaining too,
+so the option must clear breakeven and keep going. For a put the shares are
+losing, so the put beats them while still down on the trade: MSTR's 0.30 delta
+put broke even at -11.8% but beat the stock at -11.3%. The first draft of that
+column's help text asserted it was always the higher bar; a test that verified
+both returns matched at the computed price is what caught it.
+
+**Signed metrics need a separate ranking value.** The move columns are negative
+for puts, so sorting descending on the raw number calls the smallest required
+fall the most demanding. Ranking uses magnitude while the display stays signed.
+
+## 11. Deployment specifics for GitHub Pages
 
 * `base` must match the repo path (`/optionsimulator/`), and the router `basename`
   must follow it — `import.meta.env.BASE_URL` keeps them in sync instead of the
@@ -241,7 +274,7 @@ likely to finish in the money.
 * The deploy workflow is **manual trigger only** (`workflow_dispatch`) so a push
   cannot silently replace the live site.
 
-## 11. Testing notes
+## 12. Testing notes
 
 Playwright against the real dev server caught what unit tests would have missed:
 the empty contract list, the wrong base path, and the CORS failures in a genuine
@@ -251,9 +284,26 @@ node 23, since `Request`/`Response`/`fetch` are all global there.
 
 One harness trap: the adapter initially dropped request headers, which made the
 origin allowlist look broken when it was fine. Verify the test harness before
-trusting a negative result.
+trusting a negative result. A second one: a hand-rolled `window` stub made React
+take the browser path and crash with `target.addEventListener is not a function`.
+Leaving `window` undefined was correct — the code under test already falls back
+to memory when storage is missing.
 
-## 12. Deploying the worker (Cloudflare dashboard)
+**"It compiles" is not evidence that it renders.** A mount effect referenced a
+`const` declared 170 lines below it. Dependency arrays are evaluated *during*
+render, so the reference hit the temporal dead zone and threw on every render,
+blanking the whole app — while `vite build` exited 0 and ESLint stayed silent.
+It shipped because the verification for that change tested pure functions that
+had nothing to do with the crash.
+
+The fix was a page-mount pass, now run before every deploy: render each page
+inside a `MemoryRouter` through `renderToString` across a spread of URLs. It was
+proven to have teeth by reinstating the bug and watching it fail. It cannot catch
+layout or interaction, and it cannot see anything that only renders after data
+loads — a table gated on `rows.length > 0`, or Radix content that mounts in a
+portal on open. Those have to be asserted against the built bundle instead.
+
+## 13. Deploying the worker (Cloudflare dashboard)
 
 Workers & Pages → Create → **"Start with Hello World!"**. The neighbouring options
 are both wrong for this: *Connect GitHub* tries to build the whole Vite app and
@@ -276,7 +326,7 @@ Live at **https://market-proxy.enea-denkt.workers.dev**. Verified against it:
 The symbol directory is the slow one, which is why it is fetched lazily on the
 first search and kept in memory rather than re-fetched per keystroke.
 
-## 13. Publishing, as actually performed
+## 14. Publishing, as actually performed
 
 GitHub Pages serves the **`gh-pages` branch**. Pushing source to `main` changes
 nothing on the live site — that surprise is worth remembering.
@@ -304,6 +354,15 @@ knowing because `gh` is *not* authenticated on this machine, so repo variables a
 workflow runs cannot be inspected at all. Do not assert the state of the
 `MARKET_PROXY` variable from memory; it is unverifiable from here.
 
+**A correct artifact can still fail to publish.** On 2026-08-17 `gh-pages` held
+the right commit with a correct tree while the site served the previous bundle
+for a quarter of an hour. GitHub's own Pages workflow had failed three times
+downloading `actions/deploy-pages` from codeload.github.com — `429 Too Many
+Requests`, then an internal server error. The distinguishing sign is
+`last-modified` on the live index not moving; the response to it is to re-run,
+never to rebuild. Time spent verifying the artifact was wasted, though checking
+the tree was the right first move.
+
 **SSH gotcha:** port 22 to github.com returns *Connection refused* on this machine.
 It first appeared mid-session having worked minutes earlier, and has recurred every
 session since, so treat it as the normal state rather than a blip. GitHub's
@@ -313,7 +372,7 @@ alternate endpoint works and uses the same key:
 git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages
 ```
 
-## 14. Still open
+## 15. Still open
 
 * **Cboe's terms (§4) are now being exercised in production**, not in testing. The
   IP-block risk is real rather than theoretical; migrating to a licensed feed
