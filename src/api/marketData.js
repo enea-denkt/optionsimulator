@@ -216,6 +216,11 @@ function normalizeChain(payload, symbol) {
       volume: quote.volume,
       openInterest: quote.open_interest,
       delta: quote.delta,
+      // Kept so exposure models can cross-check their own Black-Scholes against
+      // the exchange's published greeks at today's spot.
+      gamma: quote.gamma,
+      vega: quote.vega,
+      theta: quote.theta,
       occSymbol: quote.option,
       optionType: parsed.optionType,
       strike: parsed.strike,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, LineChart, Activity, Scale, X } from 'lucide-react';
+import { Menu, LineChart, Activity, Scale, Magnet, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 // Imported rather than referenced from /public so the hash-named build output
 // is cache-busted like every other asset.
@@ -39,6 +39,13 @@ const NAV_ITEMS = [
     blurb: 'Find which company has the expensive options',
     icon: Scale,
     match: (path) => /\/compare$/i.test(path),
+  },
+  {
+    to: '/exposure',
+    label: 'Dealer Exposure',
+    blurb: 'See where hedging flows pin or accelerate price',
+    icon: Magnet,
+    match: (path) => /\/exposure$/i.test(path),
   },
 ];
 
