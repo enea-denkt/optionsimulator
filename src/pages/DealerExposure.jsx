@@ -12,7 +12,7 @@ import TickerSearch from '@/components/simulator/TickerSearch';
 import MetricTile from '@/components/insights/MetricTile';
 import InsightCard, { ChartTooltip } from '@/components/insights/InsightCard';
 import ExposureHeatmap from '@/components/exposure/ExposureHeatmap';
-import { fetchOptionChain, formatExpiration } from '@/api/marketData';
+import { fetchOptionChain } from '@/api/marketData';
 import { listExpirations } from '@/lib/optionAnalytics';
 import {
   exposureByStrike, exposureProfile, gammaFlip, keyLevels, exposureGrid,
