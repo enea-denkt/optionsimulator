@@ -264,7 +264,46 @@ both returns matched at the computed price is what caught it.
 for puts, so sorting descending on the raw number calls the smallest required
 fall the most demanding. Ranking uses magnitude while the display stays signed.
 
-## 11. Deployment specifics for GitHub Pages
+## 11. Dealer gamma and vanna exposure
+
+**The whole model rests on an assumption that the data cannot supply.** Open
+interest records how many contracts exist; it never records who is long and who
+is short. Every published gamma-exposure number — SqueezeMetrics, SpotGamma,
+MenthorQ — closes that gap with a convention, the common one being that dealers
+are long calls and short puts, because customers on balance buy puts for
+protection and sell calls for yield. When that convention is wrong for a name,
+the sign of the entire picture is wrong. It is exposed as a setting on the page
+and stated above the numbers rather than buried as a constant.
+
+**Greeks are recomputed rather than read from the feed.** The point of a gamma
+profile is asking what exposure *would* be at a price other than today's, and
+the feed only publishes greeks at today's. Vanna is not published at all:
+`vanna = -phi(d1) * d2 / sigma`, derived from Black-Scholes.
+
+Recomputation was cross-checked against the exchange's own published gamma on
+SPY near the money — agreement within **1.5%**, the residual being the feed's
+four-decimal rounding. Worth doing whenever a derived quantity has a published
+counterpart; it catches unit and convention errors that eyeballing never will.
+
+Units, chosen because "GEX" alone is meaningless: gamma exposure is **dollars of
+delta per 1% move in spot**, vanna exposure is **dollars of delta per 1
+volatility point**.
+
+**The flip is found by sweeping, not by algebra.** Net exposure is recomputed
+across a range of hypothetical spot prices and the zero crossing interpolated.
+Verified on SPY: net gamma +$2.40B per 1% move, flip at $769.90, with the sign
+genuinely reversing either side of it. Volatility is held fixed during the
+sweep, which is the standard simplification and is worth naming — in reality
+volatility rises as price falls, which pushes the true flip higher than the
+curve shows.
+
+**A heatmap is a layout problem, not a plotting one.** Expiration across, strike
+down, colour diverging around zero: recharts has no heatmap primitive, and CSS
+grid handles a dense matrix of labelled cells with a sticky axis better anyway.
+Intensity scales with the *square root* of magnitude, because one or two strikes
+dominate any chain and a linear scale leaves everything else invisible.
+
+## 12. Deployment specifics for GitHub Pages
 
 * `base` must match the repo path (`/optionsimulator/`), and the router `basename`
   must follow it — `import.meta.env.BASE_URL` keeps them in sync instead of the
@@ -274,7 +313,7 @@ fall the most demanding. Ranking uses magnitude while the display stays signed.
 * The deploy workflow is **manual trigger only** (`workflow_dispatch`) so a push
   cannot silently replace the live site.
 
-## 12. Testing notes
+## 13. Testing notes
 
 Playwright against the real dev server caught what unit tests would have missed:
 the empty contract list, the wrong base path, and the CORS failures in a genuine
@@ -303,7 +342,7 @@ layout or interaction, and it cannot see anything that only renders after data
 loads — a table gated on `rows.length > 0`, or Radix content that mounts in a
 portal on open. Those have to be asserted against the built bundle instead.
 
-## 13. Deploying the worker (Cloudflare dashboard)
+## 14. Deploying the worker (Cloudflare dashboard)
 
 Workers & Pages → Create → **"Start with Hello World!"**. The neighbouring options
 are both wrong for this: *Connect GitHub* tries to build the whole Vite app and
@@ -326,7 +365,7 @@ Live at **https://market-proxy.enea-denkt.workers.dev**. Verified against it:
 The symbol directory is the slow one, which is why it is fetched lazily on the
 first search and kept in memory rather than re-fetched per keystroke.
 
-## 14. Publishing, as actually performed
+## 15. Publishing, as actually performed
 
 GitHub Pages serves the **`gh-pages` branch**. Pushing source to `main` changes
 nothing on the live site — that surprise is worth remembering.
@@ -372,7 +411,7 @@ alternate endpoint works and uses the same key:
 git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages
 ```
 
-## 15. Still open
+## 16. Still open
 
 * **Cboe's terms (§4) are now being exercised in production**, not in testing. The
   IP-block risk is real rather than theoretical; migrating to a licensed feed

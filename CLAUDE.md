@@ -29,6 +29,7 @@ the menu is the `NAV_ITEMS` array in `src/pages/Layout.jsx`.
 | `/` | Options Simulator | How does this position behave under a scenario? |
 | `/insights` | Chain Insights | What is the chain pricing for one name? |
 | `/compare` | Compare Companies | Which of these names has the expensive options? |
+| `/exposure` | Dealer Exposure | Where do hedging flows pin or accelerate price? |
 
 Shared building blocks, all pure and node-testable:
 
@@ -38,6 +39,7 @@ Shared building blocks, all pure and node-testable:
 | `src/lib/optionAnalytics.js` | smile, term structure, max pain, expected move, realized vol |
 | `src/lib/volatilityHistory.js` | rank and percentile, rolling series, VIX helpers |
 | `src/lib/optionComparison.js` | cross-name contract matching and the comparison metrics |
+| `src/lib/gammaExposure.js` | Black-Scholes gamma and vanna, dealer exposure, gamma flip |
 | `src/lib/useUrlState.js` | query-string state, shared by every page |
 | `src/lib/tickerMemory.js` | the ticker carried between pages for the session |
 
