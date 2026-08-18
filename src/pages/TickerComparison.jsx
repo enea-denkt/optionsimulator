@@ -136,7 +136,7 @@ export default function TickerComparison() {
           symbol,
           reason: matchMode === 'delta'
             ? `no quoted ${optionType} near ${delta.toFixed(2)} delta`
-            : 'no quoted contract near that strike',
+            : `no listed strike near ${(moneyness * 100).toFixed(0)}% of its share price`,
         });
         continue;
       }
@@ -246,7 +246,7 @@ export default function TickerComparison() {
                       ? 'At the money — strike at the current share price'
                       : `Strike ${((moneyness - 1) * 100).toFixed(0)}% ${moneyness > 1 ? 'above' : 'below'} the share price`
                   }
-                  min={0.8} max={1.2} step={0.01}
+                  min={0.8} max={2} step={0.01}
                   onChange={(v) => set({ moneyness: v })}
                 />
               )}
@@ -254,9 +254,9 @@ export default function TickerComparison() {
               <SliderRow
                 label="Time to expiry"
                 value={targetDte}
-                display={`${targetDte} days`}
+                display={targetDte >= 365 ? `${(targetDte / 365).toFixed(1)} years` : `${targetDte} days`}
                 hint="Each name uses its listed expiration closest to this"
-                min={7} max={365} step={1}
+                min={7} max={730} step={1}
                 onChange={(v) => set({ targetDte: v })}
               />
             </div>

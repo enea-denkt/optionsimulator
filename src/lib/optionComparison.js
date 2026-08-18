@@ -31,6 +31,13 @@ export const MATCH_MODES = {
  * whereas equal delta picks options the market considers equally likely to
  * finish in the money — which is closer to what "the same trade" means.
  */
+/**
+ * How far the chosen strike may sit from the requested moneyness, in units of
+ * spot. Ten points is loose enough for coarse ladders and tight enough that a
+ * row never claims a moneyness it does not have.
+ */
+const MONEYNESS_TOLERANCE = 0.1;
+
 export const DEFAULT_DELTA = 0.3;
 export const DEFAULT_MONEYNESS = 1;
 export const DEFAULT_TARGET_DTE = 30;
@@ -77,10 +84,17 @@ export function pickContract(chain, expiration, optionType, { mode, moneyness, d
   }
 
   const targetStrike = spot * moneyness;
-  return candidates.reduce(
-    (best, c) => (Math.abs(c.strike - targetStrike) < Math.abs(best.strike - targetStrike) ? c : best),
+  const best = candidates.reduce(
+    (winner, c) => (Math.abs(c.strike - targetStrike) < Math.abs(winner.strike - targetStrike) ? c : winner),
     candidates[0],
   );
+
+  // Strike ladders stop well short of the extremes on many names — KO lists
+  // nothing above 125, so asking for 200% of spot would otherwise return a 144%
+  // contract labelled as if it were the thing requested. Refuse it, the same way
+  // delta mode refuses a match nowhere near the requested delta.
+  const achieved = spot > 0 ? best.strike / spot : null;
+  return achieved !== null && Math.abs(achieved - moneyness) <= MONEYNESS_TOLERANCE ? best : null;
 }
 
 /**
