@@ -15,6 +15,7 @@ import { fetchOptionChain } from '@/api/marketData';
 import {
   MATCH_MODES, METRICS, DEFAULT_DELTA, DEFAULT_MONEYNESS, DEFAULT_TARGET_DTE,
   pickExpiration, pickContract, compareContract, comparisonVerdict, rankingValue,
+  matchLimits, furthestExpiry,
 } from '@/lib/optionComparison';
 import { useUrlState, asString, asNumber, asEnum } from '@/lib/useUrlState';
 import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
@@ -149,6 +150,28 @@ export default function TickerComparison() {
     return { rows: out, unmatched: missed };
   }, [symbols, chains, targetDte, matchMode, moneyness, delta, optionType]);
 
+  // Where each name's ladder and calendar run out, for the slider ticks.
+  const coverage = useMemo(() => {
+    const moneyness = [];
+    const expiry = [];
+
+    for (const symbol of symbols) {
+      const chain = chains[symbol];
+      if (!chain || !(chain.stockPrice > 0)) continue;
+
+      const exp = pickExpiration(chain, targetDte);
+      if (exp) {
+        const limits = matchLimits(chain, exp.expiration, optionType, chain.stockPrice);
+        if (limits) moneyness.push({ value: limits.maxMoneyness, label: symbol });
+      }
+
+      const furthest = furthestExpiry(chain);
+      if (furthest) expiry.push({ value: furthest, label: symbol });
+    }
+
+    return { moneyness, expiry };
+  }, [symbols, chains, targetDte, optionType]);
+
   const metric = METRICS.find((m) => m.id === metricId) || METRICS[0];
   const matchLabel = matchMode === 'delta'
     ? `${delta.toFixed(2)} delta`
@@ -248,6 +271,7 @@ export default function TickerComparison() {
                   }
                   min={0.8} max={2} step={0.01}
                   onChange={(v) => set({ moneyness: v })}
+                  markers={coverage.moneyness}
                 />
               )}
 
@@ -258,13 +282,30 @@ export default function TickerComparison() {
                 hint="Each name uses its listed expiration closest to this"
                 min={7} max={730} step={1}
                 onChange={(v) => set({ targetDte: v })}
+                markers={coverage.expiry}
               />
             </div>
           </div>
 
           <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-100 pt-4">
             <div className="min-w-[220px] flex-1 space-y-2">
-              <Label className="text-sm font-medium text-slate-700">Rank on</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label className="text-sm font-medium text-slate-700">Rank on</Label>
+                {symbols.length > 0 && !loading && (
+                  // Sits beside the controls, because the control is what caused
+                  // the drop-out and the warnings below can scroll out of view.
+                  <span
+                    className={`rounded-md px-2 py-0.5 text-xs font-medium ${
+                      unmatched.length
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-emerald-50 text-emerald-700'
+                    }`}
+                  >
+                    {rows.length} of {symbols.length} tickers matched
+                    {unmatched.length > 0 && ` · ${unmatched.map((u) => u.symbol).join(', ')} dropped`}
+                  </span>
+                )}
+              </div>
               <Select value={metricId} onValueChange={(v) => { set({ metricId: v }); setSort({ key: v, dir: 'desc' }); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -360,7 +401,9 @@ export default function TickerComparison() {
       {!loading && rows.length === 0 && symbols.length > 0 && (
         <Card className="border-slate-200 shadow-lg">
           <CardContent className="p-6 text-sm text-slate-500">
-            Nothing to compare yet at these settings.
+            No ticker has a contract matching these settings. The ticks under the sliders show
+            where each one&apos;s listed strikes and expirations run out — pull back inside them, or
+            switch to matching by delta.
           </CardContent>
         </Card>
       )}
@@ -368,14 +411,49 @@ export default function TickerComparison() {
   );
 }
 
-function SliderRow({ label, value, display, hint, min, max, step, onChange }) {
+/**
+ * A slider that shows where each ticker's data runs out.
+ *
+ * `markers` are the cliff edges: past one, that name has nothing listed and its
+ * row disappears. Showing them on the track means the drop-off is visible before
+ * it happens, rather than being discovered by watching a bar vanish.
+ */
+function SliderRow({ label, value, display, hint, min, max, step, onChange, markers = [] }) {
+  const position = (v) => `${Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100))}%`;
+  const inRange = markers.filter((m) => m.value > min && m.value < max);
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <Label className="text-sm font-medium text-slate-700">{label}</Label>
         <span className="text-sm font-semibold" style={{ color: BRAND }}>{display}</span>
       </div>
-      <Slider value={[value]} min={min} max={max} step={step} onValueChange={(v) => onChange(v[0])} />
+
+      <div className="relative pb-5">
+        <Slider value={[value]} min={min} max={max} step={step} onValueChange={(v) => onChange(v[0])} />
+
+        {inRange.length > 0 && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-full">
+            {inRange.map((m) => (
+              <span key={m.label} className="absolute top-0" style={{ left: position(m.value) }}>
+                {/* The tick sits on the track; the label hangs below it. */}
+                <span
+                  className="absolute -top-0.5 block h-4 w-px -translate-x-1/2"
+                  style={{ backgroundColor: value > m.value ? '#FF2300' : '#94a3b8' }}
+                />
+                <span
+                  className={`absolute top-4 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium ${
+                    value > m.value ? 'text-rose-600' : 'text-slate-400'
+                  }`}
+                >
+                  {m.label}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
       <p className="text-xs text-slate-500">{hint}</p>
     </div>
   );

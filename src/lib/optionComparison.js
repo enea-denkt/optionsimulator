@@ -36,7 +36,7 @@ export const MATCH_MODES = {
  * spot. Ten points is loose enough for coarse ladders and tight enough that a
  * row never claims a moneyness it does not have.
  */
-const MONEYNESS_TOLERANCE = 0.1;
+export const MONEYNESS_TOLERANCE = 0.1;
 
 export const DEFAULT_DELTA = 0.3;
 export const DEFAULT_MONEYNESS = 1;
@@ -95,6 +95,40 @@ export function pickContract(chain, expiration, optionType, { mode, moneyness, d
   // delta mode refuses a match nowhere near the requested delta.
   const achieved = spot > 0 ? best.strike / spot : null;
   return achieved !== null && Math.abs(achieved - moneyness) <= MONEYNESS_TOLERANCE ? best : null;
+}
+
+/**
+ * How far a name's listed strikes actually reach, in moneyness, and how far out
+ * its expirations run.
+ *
+ * This is what lets the sliders show where each ticker's coverage ends instead
+ * of letting the user drag past the cliff and watch a row vanish. Computed from
+ * the quoted edges of the ladder plus the matching tolerance, so it agrees with
+ * `pickContract` by construction.
+ *
+ * Interior gaps in a ladder are ignored: they are rare on names anyone compares,
+ * and drawing them would turn one clear marker into visual noise.
+ */
+export function matchLimits(chain, expiration, optionType, spot) {
+  if (!chain || !expiration || !(spot > 0)) return null;
+
+  const { calls, puts } = contractsFor(chain, expiration);
+  const quoted = (optionType === 'put' ? puts : calls).filter(
+    (c) => c.mark > 0 && (c.bid > 0 || c.last > 0),
+  );
+  if (!quoted.length) return null;
+
+  const strikes = quoted.map((c) => c.strike);
+  return {
+    minMoneyness: Math.min(...strikes) / spot - MONEYNESS_TOLERANCE,
+    maxMoneyness: Math.max(...strikes) / spot + MONEYNESS_TOLERANCE,
+  };
+}
+
+/** The furthest expiration a name lists with open interest, in days. */
+export function furthestExpiry(chain, today = new Date()) {
+  const expirations = listExpirations(chain, today).filter((e) => e.dte > 0 && e.openInterest > 0);
+  return expirations.length ? Math.max(...expirations.map((e) => e.dte)) : null;
 }
 
 /**
