@@ -3,13 +3,14 @@ import { motion } from 'framer-motion';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
-import { AlertCircle, Loader2, RefreshCw, Scale } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw, Scale, Smile, CalendarClock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import TickerMultiSelect from '@/components/comparison/TickerMultiSelect';
 import ComparisonTable from '@/components/comparison/ComparisonTable';
+import IVCurveChart, { SERIES_COLOURS } from '@/components/comparison/IVCurveChart';
 import InsightCard, { ChartTooltip } from '@/components/insights/InsightCard';
 import { fetchOptionChain } from '@/api/marketData';
 import {
@@ -17,6 +18,8 @@ import {
   pickExpiration, pickContract, compareContract, comparisonVerdict, rankingValue,
   matchLimits, furthestExpiry,
 } from '@/lib/optionComparison';
+import { smileCurve, termCurve, skewSlope, surfaceVerdict } from '@/lib/volatilitySurface';
+import { listExpirations } from '@/lib/optionAnalytics';
 import { useUrlState, asString, asNumber, asEnum } from '@/lib/useUrlState';
 import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
 
@@ -32,6 +35,7 @@ const URL_SPEC = {
   targetDte: { ...asNumber(DEFAULT_TARGET_DTE), param: 'dte' },
   optionType: { ...asEnum(['call', 'put'], 'call'), param: 'type' },
   metricId: { ...asEnum(METRICS.map((m) => m.id), 'ivPct'), param: 'metric' },
+  curveScale: { ...asEnum(['absolute', 'relative'], 'absolute'), param: 'curve' },
 };
 
 /**
@@ -54,13 +58,14 @@ const URL_DEFAULTS = {
   targetDte: DEFAULT_TARGET_DTE,
   optionType: 'call',
   metricId: 'ivPct',
+  curveScale: 'absolute',
 };
 
 export default function TickerComparison() {
   const [view, setView] = useUrlState(URL_SPEC, URL_DEFAULTS, {
     initial: { tickers: seedTickers() },
   });
-  const { tickers, matchMode, delta, moneyness, targetDte, optionType, metricId } = view;
+  const { tickers, matchMode, delta, moneyness, targetDte, optionType, metricId, curveScale } = view;
   const set = (patch) => setView((prev) => ({ ...prev, ...patch }));
 
   const symbols = useMemo(
@@ -171,6 +176,44 @@ export default function TickerComparison() {
 
     return { moneyness, expiry };
   }, [symbols, chains, targetDte, optionType]);
+
+  /**
+   * The volatility surface, sliced two ways: the smile at the chosen expiry, and
+   * the term structure at the chosen moneyness. The existing sliders therefore
+   * pick which slice is on screen rather than only driving the table.
+   */
+  const curves = useMemo(() => {
+    const normalise = curveScale === 'relative';
+    const smile = { call: [], put: [] };
+    const term = { call: [], put: [] };
+
+    symbols.forEach((symbol, i) => {
+      const chain = chains[symbol];
+      if (!chain || !(chain.stockPrice > 0)) return;
+
+      const spot = chain.stockPrice;
+      const colour = SERIES_COLOURS[i % SERIES_COLOURS.length];
+      const exp = pickExpiration(chain, targetDte);
+      const expirations = listExpirations(chain).filter((e) => e.dte > 0 && e.openInterest > 0);
+
+      for (const side of ['call', 'put']) {
+        if (exp) {
+          smile[side].push({
+            symbol, colour,
+            points: smileCurve(chain, exp.expiration, side, spot, { from: 0.7, to: 1.3, normalise }),
+            skew: skewSlope(chain, exp.expiration, side, spot),
+          });
+        }
+        term[side].push({
+          symbol, colour,
+          points: termCurve(chain, expirations, side, spot, moneyness, { normalise }),
+          skew: null,
+        });
+      }
+    });
+
+    return { smile, term, normalise };
+  }, [symbols, chains, targetDte, moneyness, curveScale]);
 
   const metric = METRICS.find((m) => m.id === metricId) || METRICS[0];
   const matchLabel = matchMode === 'delta'
@@ -395,6 +438,97 @@ export default function TickerComparison() {
               </p>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* The volatility surface, compared */}
+      {symbols.length > 0 && !loading && (
+        <div className="mt-6 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Volatility curves</h3>
+              <p className="text-sm text-slate-600">
+                How each name prices movement away from today&apos;s price, and further out in time.
+              </p>
+            </div>
+            <div className="flex rounded-lg border border-slate-200 p-0.5">
+              {[
+                { id: 'absolute', label: 'Outright IV' },
+                { id: 'relative', label: 'Relative to own ATM' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => set({ curveScale: opt.id })}
+                  className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                    curveScale === opt.id ? 'text-white' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  style={curveScale === opt.id ? { backgroundColor: BRAND } : undefined}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {curveScale === 'relative' && (
+            <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              Each curve is divided by its own at-the-money volatility, so height no longer reflects
+              how volatile the stock is — only the <strong>shape</strong> of what it charges away from
+              the money. A steeper curve means that name is paying up for a big move relative to its
+              own baseline, which is a different claim from simply being volatile.
+            </p>
+          )}
+
+          {/* Smile: across moneyness, at the chosen expiry */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            {['call', 'put'].map((side) => (
+              <IVCurveChart
+                key={`smile-${side}`}
+                title={`${side === 'call' ? 'Calls' : 'Puts'} — volatility by moneyness`}
+                subtitle={`The smile at roughly ${targetDte} days. Left of the dashed line is below today's price.`}
+                icon={Smile}
+                verdict={surfaceVerdict(curves.smile[side], { normalised: curves.normalise, atMoneyness: null })}
+                footnote={
+                  side === 'call'
+                    ? 'A downward slope means the market charges more for strikes below spot than above — the usual equity shape, and the reason "skew" is the word people use rather than "smile".'
+                    : 'Puts are quoted on the same moneyness axis as calls, so the two panels can be read against each other. Where they disagree at the same strike, the wider bid-ask is usually the reason.'
+                }
+                series={curves.smile[side]}
+                xKey="moneyness"
+                xLabel="Strike ÷ share price"
+                xFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+                normalised={curves.normalise}
+                referenceX={1}
+              />
+            ))}
+          </div>
+
+          {/* Term structure: across expirations, at the chosen moneyness */}
+          <div className="grid gap-6 xl:grid-cols-2">
+            {['call', 'put'].map((side) => (
+              <IVCurveChart
+                key={`term-${side}`}
+                title={`${side === 'call' ? 'Calls' : 'Puts'} — volatility by expiration`}
+                subtitle={`Held at ${(moneyness * 100).toFixed(0)}% of each share price, so the names stay comparable across time.`}
+                icon={CalendarClock}
+                footnote="Rising with time is the calm default: more time, more that can go wrong. A curve that falls away is pricing a nearer-term event as the bigger risk. The horizontal scale is logarithmic so near-dated expirations are not squeezed into the left edge."
+                series={curves.term[side]}
+                xKey="dte"
+                xLabel="Days to expiration"
+                xFormatter={(v) => (v >= 365 ? `${(v / 365).toFixed(1)}y` : `${v}d`)}
+                normalised={curves.normalise}
+                referenceX={targetDte}
+                logX
+              />
+            ))}
+          </div>
+
+          <p className="pb-4 text-xs italic text-slate-500">
+            Curves are interpolated between quoted strikes and stop where quoting stops — no
+            extrapolation, so a line that ends early means that name has nothing listed further out.
+            The moneyness and expiry sliders above choose which slice of the surface is shown.
+          </p>
         </div>
       )}
 
