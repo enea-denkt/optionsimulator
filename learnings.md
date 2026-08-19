@@ -2,7 +2,11 @@
 
 Notes from wiring online ticker search and live option chains into this app,
 written down so the reasoning is not lost. Everything below was tested, not
-assumed; dates and figures are from 2026-08-16.
+assumed; dates and figures are from 2026-08-16 onward.
+
+For the separate question of turning this into a subscription product — hosting,
+auth, billing, and the two decisions that shape those — see
+[building platform.md](building%20platform.md).
 
 ---
 

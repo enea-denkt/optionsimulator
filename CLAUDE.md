@@ -2,7 +2,9 @@
 
 Operational instructions for this repo. The *reasoning* behind these choices is in
 [learnings.md](learnings.md); this file is the "what to run" so it never has to be
-re-derived or guessed.
+re-derived or guessed. Plans for turning this into a subscription product live in
+[building platform.md](building%20platform.md) — none of it is built yet, so
+nothing in this file assumes it.
 
 ## Repo facts
 
