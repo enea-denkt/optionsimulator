@@ -29,8 +29,10 @@ Two specifics get sharper with paying subscribers:
 * redistributing LiveVol data inside a paid product is a different legal
   question from one person looking at it
 
-**A licensed feed must be in place before the first payment.** Candidates:
-marketdata.app, Polygon, ORATS, Tradier — roughly $50–300/month.
+**A licensed feed must be in place before the first payment.** The vendor
+subscription is the cheap part and the OPRA licence is the expensive part — see
+§2, which is where the research landed and where the model decision actually
+gets made.
 
 Architecturally the switch is cheap, and deliberately so: all network access is
 isolated in `src/api/marketData.js` and everything crosses the network through
@@ -53,7 +55,124 @@ precisely so they could be tested in node, and the same property means they run
 **inside a Worker unchanged** whenever computation should move server-side to
 keep it out of the bundle.
 
-## 2. Hosting: Workers with static assets, not Pages
+## 2. Market data: the licence costs more than the data
+
+Researched 2026-08-19. **The subscription fee to a vendor is the small number.**
+US options data is governed by OPRA, the Options Price Reporting Authority, and
+its fees are charged separately from whatever a vendor charges for access.
+
+### The rule that breaks the obvious plan
+
+> "Even if you're licensed with us as a customer, that only covers your access to
+> use the data internally — not the right to show it to others."
+
+**Buying an API subscription does not give the right to show that data to paying
+customers.** Both vendors consulted say the same thing: external display makes
+you a redistributor, and a redistributor needs its own agreement with OPRA.
+Theta Data puts it as "redistribution of any data from Theta Data is prohibited
+unless there is a commercial agreement between your firm and Theta Data that
+permits it".
+
+This is the single most expensive assumption to get wrong, because it is
+invisible until an audit.
+
+### What the tiers cost
+
+| Item | Real-time | 15-minute delayed |
+| --- | --- | --- |
+| Redistributor licence | $1,500/mo ($650 query-only) | **disputed — see below** |
+| Per user, non-professional | $1.25/mo | none |
+| Per user, professional | $31.50/mo | none |
+| Non-display, per category | $2,000/mo | none |
+
+**Non-display Category 2 is "calculations performed for customers (Greeks,
+implied volatility)".** That is a literal description of this application. On
+real-time data it would cost $2,000/month on its own, before any per-user fee
+and before the vendor's own bill. Delayed data avoids it entirely.
+
+Running real-time therefore starts around **$3,500/month in licence fees alone**.
+That is not a small-business number pre-revenue.
+
+### The contradiction worth resolving before committing
+
+The two sources disagree on whether the redistributor fee applies to delayed
+data, and the difference is $1,500 a month:
+
+* **marketdata.app:** delayed avoids per-user and non-display fees, but "the
+  redistributor fee is mandatory for any external-facing tool", delayed included
+* **Theta Data:** "There are currently no OPRA fees for using or redistributing
+  data that is over 15 minutes delayed" — while also noting you "may need to
+  still register as a data vendor with OPRA if you are redistributing delayed
+  data"
+
+**Confirm this with OPRA directly before building a pricing model on it.** Two
+vendors with commercial incentives are not a substitute for the plan
+administrator, and the answer moves the break-even by $18,000 a year.
+
+### The exemption that suggests the actual starting point
+
+marketdata.app states that data at least one full trading day old is exempt from
+OPRA licensing entirely — "Friday's data can only be used on Monday at 9:30 AM".
+Theta Data does not address historical data, so this is one-sourced and needs
+confirming too.
+
+If it holds, it matters a great deal here, because **most of what this app
+already computes does not need live data**:
+
+* open interest is published end-of-day regardless, so the whole exposure page
+  is inherently a T+1 view and already says so
+* IV rank, skew comparison, term structure and max pain are positional
+  measures, not tick measures
+* the simulator prices a scenario, not a fill
+
+A T+1 product would carry **no OPRA licensing at all** and lose very little of
+the current feature set.
+
+### Three viable models
+
+| Model | Licence cost | What it supports |
+| --- | --- | --- |
+| **T+1, prior session close** | plausibly zero | Everything built so far, minus live premiums |
+| **15-minute delayed** | $0–1,500/mo, unresolved | Same, with same-day context |
+| **Real-time** | $3,500/mo and up | Intraday flow, live gamma — a different product |
+
+Start at T+1, move to delayed when revenue justifies the fixed cost, and treat
+real-time as a separate product decision rather than an upgrade.
+
+### Vendors
+
+Indicative 2026 pricing, gathered from vendor and comparison pages rather than
+from quotes:
+
+| Vendor | From | Notes |
+| --- | --- | --- |
+| **ORATS** | $99/mo | Options specialist. **Historical IV surface** — solves the gap in learnings.md §9, where per-ticker IV rank was impossible on the free Cboe feed. Hosted backtesting, proprietary indicators |
+| **Theta Data** | usage-based | Cheaper per gigabyte, raw data, expects you to compute. Good fit given the analytics are already written |
+| **FlashAlpha** | $29/mo | Cheapest delayed entry: 15-minute delay, 2 years history. $79 and $199 tiers add second aggregates and tick history |
+| **Polygon** | ~$79/mo | Full chains, websockets, real-time consolidated quotes |
+| **marketdata.app** | subscription, free trial | Clear REST design; publishes the clearest OPRA explainer of any vendor |
+| Tradier, Intrinio, Unusual Whales | — | Also in the comparison set, not evaluated in depth |
+
+**ORATS is the strongest fit** for a product that sells derived insight rather
+than quotes, specifically because it supplies historical implied volatility.
+That single feature closes the one analytical gap the current app cannot fill,
+and it is the difference between "realized volatility rank, labelled honestly"
+and actual IV rank.
+
+**Theta Data is the value option** if cost matters more than convenience, since
+the computation is already written and tested.
+
+### What could not be verified
+
+* whether individual vendors permit their customers to display data to end
+  users, and on what terms — every vendor's own contract has to be read
+* whether the historical exemption is as clean as one source suggests
+* whether the delayed redistributor fee applies
+
+All three are questions for OPRA and for a vendor's compliance team, not for a
+search engine. None of them block building; all of them block charging.
+
+## 3. Hosting: Workers with static assets, not Pages
 
 This was checked rather than assumed, and the first instinct was wrong. Pages
 looked like the obvious answer; Cloudflare's own guidance as of 2026 is the
@@ -92,7 +211,7 @@ both updated by pushing.
 a year — and authentication emails, cookies and Stripe callbacks all want a real
 domain. It can point at GitHub Pages until the cutover.
 
-## 3. Repository shape
+## 4. Repository shape
 
 ```
 optionsimulator/
@@ -111,7 +230,7 @@ optionsimulator/
 Moving the analytics to `packages/core` is the change that pays off later: it is
 what allows server-side computation for paid tiers without rewriting anything.
 
-## 4. The stack
+## 5. The stack
 
 | Need | Choice | Why |
 | --- | --- | --- |
@@ -131,7 +250,7 @@ technical argues for self-hosting.
 factory, never as a module-level singleton. Workers are stateless per request and
 the D1 binding changes per invocation.
 
-## 5. User management
+## 6. User management
 
 Do not build this first. Most of it comes free:
 
@@ -142,7 +261,7 @@ Then a thin `/admin` route gated to a single user id, reading from D1. Perhaps
 two hundred lines. Build it when SQL becomes tedious, which needs a number of
 users that does not exist yet.
 
-## 6. Order of work
+## 7. Order of work
 
 1. **Buy the domain** — unblocks everything downstream
 2. **Restructure and move to Workers static assets** — `main` and `staging` both
@@ -153,12 +272,15 @@ users that does not exist yet.
 4. **Move market data behind the session check** — the actual paywall
 5. **Stripe** — plans, checkout, webhook to `subscription_status` in D1
 6. **Admin route**
-7. **Licensed data feed** — before the first real payment
+7. **Licensed data feed** — before the first real payment. Resolve the OPRA
+   questions in §2 *before* setting prices, not after: whether the redistributor
+   fee applies to delayed data moves the fixed cost by $18,000 a year, which is
+   the difference between a viable and an unviable subscription price
 
 Steps 2 and 3 deliver the staging environment and the account system that
 prompted this document.
 
-## 7. Still open
+## 8. Still open
 
 * **No domain yet.** Not needed for step 2; needed from step 3.
 * **What is free and what is paid** is undecided. It determines whether the
@@ -166,8 +288,13 @@ prompted this document.
   to move server-side.
 * **Whether to keep GitHub Pages** after the cutover, as a fallback or a
   marketing page.
-* **The licensed feed is not chosen.** Pricing and coverage differ enough that
-  the choice should follow the decision above about which features are paid.
+* **The licensed feed is not chosen.** ORATS leads on capability because it
+  carries historical implied volatility; Theta Data leads on cost. The choice
+  should follow the decision above about which features are paid.
+* **Three OPRA questions are unresolved** and all of them gate pricing rather
+  than building: does the redistributor fee apply to delayed data, is
+  day-old data genuinely exempt, and what does each vendor's own contract permit.
+  Answers come from OPRA and vendor compliance, not from searching.
 
 ---
 
