@@ -108,6 +108,8 @@ Deploy history (`gh-pages` sha → built from `main` sha):
 * `7827352` → `3821285` — 2026-08-17, OCC-symbol contract identity
 * `b34f8ad` → `195e22a` — 2026-08-25, implied-vol history and chart range windows
   (replaced `948f312`, a deploy that predates this list)
+* `f75c8ea` → `e57c198` — 2026-08-25, implied-vol panel removed again
+* `9500482` → `e68422c` — 2026-08-25, contract finder page
 
 ## When gh-pages is right but the site is stale
 
