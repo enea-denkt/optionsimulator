@@ -1,14 +1,18 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import OptionsFilters from '../components/simulator/OptionsFilters';
 import EvolutionChart from '../components/simulator/EvolutionChart';
+import PremiumBandsChart from '../components/simulator/PremiumBandsChart';
 import MetricsSummary from '../components/simulator/MetricsSummary';
 import { Activity, TrendingUp } from 'lucide-react';
 import { useUrlState, asString, asNumber, asNullableNumber, asEnum } from '@/lib/useUrlState';
 // One binomial tree serves this page and the contract finder, so a contract
 // cannot be worth one number here and another there.
 import { americanOptionPrice as calculateAmericanOptionPrice } from '@/lib/contractScreener';
+import { premiumBands } from '@/lib/premiumBands';
+import { fetchPriceHistory } from '@/api/marketData';
+import { realizedVol } from '@/lib/optionAnalytics';
 import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
 
 function payoffAtExpiration(spot, strike, optionType = 'call') {
@@ -156,6 +160,42 @@ export default function OptionsSimulator() {
   }, [filters.ticker]);
 
   const [simulationData, setSimulationData] = useState({ data: [], initialValue: 0 });
+
+  // The stock's own realized volatility, which is what makes "rich or cheap"
+  // answerable. Its history is cached in marketData, so switching contracts on
+  // one ticker costs nothing. Freeform mode has no ticker and simply goes
+  // without: the bands still draw, the fair-value line does not.
+  const [realizedVolPct, setRealizedVolPct] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!filters.ticker) {
+      setRealizedVolPct(null);
+      return () => { active = false; };
+    }
+    fetchPriceHistory(filters.ticker)
+      .then((history) => { if (active) setRealizedVolPct(realizedVol(history, 30)); })
+      .catch(() => { if (active) setRealizedVolPct(null); });
+    return () => { active = false; };
+  }, [filters.ticker]);
+
+  const bands = useMemo(() => {
+    if (!(filters.selectedContract || filters.simulationMode === 'free')) {
+      return { rows: [], fair: null, verdict: null };
+    }
+    return premiumBands({
+      spot: filters.currentPrice,
+      strike: filters.strikePrice,
+      dte: filters.daysToExpiration,
+      ivPct: filters.currentIV,
+      optionType: filters.optionType,
+      rate: filters.riskFreeRate,
+      priceChangePct: filters.expectedPriceChange,
+      ivChangePct: filters.expectedIVChange,
+      realizedVolPct,
+      marketPremium: filters.premiumPaid,
+    });
+  }, [filters, realizedVolPct]);
 
   useEffect(() => {
     let active = true;
@@ -471,6 +511,18 @@ export default function OptionsSimulator() {
                   </div>
 
                 </div>
+
+                <PremiumBandsChart
+                  rows={bands.rows}
+                  verdict={bands.verdict}
+                  fair={bands.fair}
+                  marketPremium={filters.premiumPaid}
+                  ivPct={filters.currentIV}
+                  realizedVolPct={realizedVolPct}
+                  priceChangePct={filters.expectedPriceChange}
+                  ivChangePct={filters.expectedIVChange}
+                  ticker={filters.ticker}
+                />
 
                 <EvolutionChart
                 data={simulationData.data}

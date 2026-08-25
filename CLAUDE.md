@@ -44,6 +44,8 @@ Shared building blocks, all pure and node-testable:
 | `src/lib/optionComparison.js` | cross-name contract matching and the comparison metrics |
 | `src/lib/gammaExposure.js` | Black-Scholes gamma and vanna, dealer exposure, gamma flip |
 | `src/lib/contractScreener.js` | the binomial pricer, chain-wide scenario ranking, return curves |
+| `src/lib/premiumBands.js` | the premium's path and dispersion over time, and the rich/cheap reading |
+| `src/lib/chartScale.js` | axis bounds and ticks that read like numbers a person would pick |
 | `src/lib/useUrlState.js` | query-string state, shared by every page |
 | `src/lib/tickerMemory.js` | the ticker carried between pages for the session |
 
@@ -245,8 +247,8 @@ wrong and have already caused bugs:
   again on 2026-08-25. Do not add a per-ticker IV-over-time chart without a real
   source behind it; one was built and removed the same day. See learnings.md.
 * **One binomial pricer serves the whole app**, exported as `americanOptionPrice`
-  from `src/lib/contractScreener.js`. The simulator imports it. Do not add a
-  second one: a contract that is worth one number on one page and another on the
+  from `src/lib/contractScreener.js`. The simulator page, its evolution chart and
+  the finder all import it. Do not add a fourth: a contract that is worth one number on one page and another on the
   next is worse than either being wrong.
 * **Adjusted series are filtered out** in `normalizeChain`, because the binomial
   model assumes 100 ordinary shares per contract. Adjusted roots end in a *digit*

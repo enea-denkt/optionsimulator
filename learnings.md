@@ -363,6 +363,42 @@ Related: contracts with no bid are excluded from the ranking entirely. An ask
 nobody bids against is a quote, not a market, and 19 of MSTR's 1,072 candidates
 were exactly that — including two in the top twenty.
 
+## 11c. Saying whether a premium is rich, without arguing in a circle
+
+The simulator's premium-band chart draws the contract's value on every day
+between now and expiry, banded by where the underlying could be. Getting it to
+also answer "is this expensive?" turned on one thing.
+
+**A model cannot tell you the market is wrong when the market told it what to
+think.** Implied volatility is extracted from the premium: price a contract at
+its own IV and the binomial tree hands back the price it started from, to the
+cent, every single time. A rich/cheap verdict built on that comparison is
+worthless, and it will look convincing while being worthless, which is worse.
+
+The reference that does work is **realized** volatility — how far the stock has
+actually moved over the last 30 trading days. Pricing the same contract at that
+number says what the premium would be worth if the stock simply carried on as it
+has. The gap between the two lines is the volatility risk premium in dollars
+rather than vol points, and it is the honest form of the question. MSTR's 52-day
+$125 call on 2026-08-25: $15.58 paid against $13.17 at realized volatility, 75%
+implied against 70% realized — 1.18×, ordinary. A positive gap is the *normal*
+state, since sellers charge for bearing risk, so the thresholds sit at 1.35 and
+0.85 rather than at 1.
+
+Two smaller things the chart forced:
+
+* **The cone's width and the pricing inside it are different assumptions.** The
+  band's width comes from today's implied volatility, because that is the
+  market's own statement about how far the stock can travel; the pricing inside
+  it follows the user's IV view. Letting one input do both would mean an IV view
+  silently changed the odds of the move as well as the price of it.
+* **A call's two-sigma upside makes the chart unreadable.** On a 75%-volatility
+  name the outer band reaches six times the premium by expiry and flattens every
+  line into the bottom fifth. The axis fits the inner band by default and the
+  outer one clips, with a toggle for the full range. Puts do not have the problem
+  — their upside is capped by the strike — and the toggle visibly does nothing on
+  one, which is the correct behaviour rather than a bug.
+
 ## 12. Deployment specifics for GitHub Pages
 
 * `base` must match the repo path (`/optionsimulator/`), and the router `basename`

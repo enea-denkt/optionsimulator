@@ -4,6 +4,7 @@ import {
 import { LineChart as LineChartIcon } from 'lucide-react';
 import InsightCard from './../insights/InsightCard';
 import { contractLabel, formatReturn } from '@/lib/contractScreener';
+import { niceAxis } from '@/lib/chartScale';
 
 /**
  * Tableau's categorical palette, which is built to stay distinguishable at
@@ -181,41 +182,16 @@ function returnAxis(data, rows, count) {
     return { domain: ['auto', 'auto'], ticks: undefined, axisWidth: 78 };
   }
 
-  // Fitting the domain to the data is only half of it: given exact bounds
-  // recharts spaces its ticks evenly between them and prints −89,947% and
-  // +410,053%. Pick a round step, place the ticks on multiples of it, and every
-  // label is a number worth reading.
-  //
-  // Only the top is rounded out to a whole step. Rounding the bottom too spent a
-  // quarter of the plot on space below −500,000% when nothing can fall past
-  // −100%: an option buyer's loss is capped at the premium, so the floor of this
-  // chart is always −100% however large the step above it grows.
-  const step = niceStep(high - low || 1);
-  const lower = low - (high - low) * 0.03;
-  const upper = Math.ceil(high / step) * step;
-  const bounds = [lower, upper];
+  // Only the top is rounded out to a whole step: an option buyer's loss is
+  // capped at the premium, so the floor of this chart is always −100% however
+  // large the step above it grows.
+  const { domain: bounds, ticks } = niceAxis(low, high, { floorAt: -100 });
 
   // Wide enough for the longest label the axis can print — "−1,200,000%" does
   // not fit the default gutter.
   const widest = Math.max(...bounds.map((v) => formatReturn(v).length));
 
-  const ticks = [];
-  for (let v = Math.ceil(lower / step) * step; v <= upper + step / 2; v += step) ticks.push(Math.round(v));
-
   return { domain: bounds, ticks, axisWidth: Math.max(64, widest * 7 + 12) };
-}
-
-/** A round step — 1, 2, 2.5 or 5 times a power of ten — giving about six ticks. */
-function niceStep(range, targetTicks = 6) {
-  const raw = range / targetTicks;
-  const magnitude = 10 ** Math.floor(Math.log10(raw));
-  const normalized = raw / magnitude;
-  const rounded = normalized <= 1 ? 1
-    : normalized <= 2 ? 2
-      : normalized <= 2.5 ? 2.5
-        : normalized <= 5 ? 5
-          : 10;
-  return rounded * magnitude;
 }
 
 /**
