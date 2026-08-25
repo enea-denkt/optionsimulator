@@ -110,6 +110,7 @@ Deploy history (`gh-pages` sha → built from `main` sha):
   (replaced `948f312`, a deploy that predates this list)
 * `f75c8ea` → `e57c198` — 2026-08-25, implied-vol panel removed again
 * `9500482` → `e68422c` — 2026-08-25, contract finder page
+* `322ecdf` → `6a505a8` — 2026-08-25, bottom-20 table beside the top
 
 ## When gh-pages is right but the site is stale
 
