@@ -104,6 +104,8 @@ Deploy history (`gh-pages` sha → built from `main` sha):
 
 * `0585554` → `a2e0767` — 2026-08-16, first deploy
 * `7827352` → `3821285` — 2026-08-17, OCC-symbol contract identity
+* `b34f8ad` → `195e22a` — 2026-08-25, implied-vol history and chart range windows
+  (replaced `948f312`, a deploy that predates this list)
 
 ## When gh-pages is right but the site is stale
 
