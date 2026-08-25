@@ -3,7 +3,7 @@ import {
 } from 'recharts';
 import { LineChart as LineChartIcon } from 'lucide-react';
 import InsightCard from './../insights/InsightCard';
-import { contractLabel } from '@/lib/contractScreener';
+import { contractLabel, formatReturn } from '@/lib/contractScreener';
 
 /**
  * Tableau's categorical palette, which is built to stay distinguishable at
@@ -37,6 +37,8 @@ export default function ReturnCurveChart({
   data, rows, spot, expectedMovePct, basis, count, onCountChange, maxCount,
 }) {
   if (!data.length) return null;
+
+  const { domain, axisWidth, ticks } = returnAxis(data, rows, count);
 
   return (
     <InsightCard
@@ -87,8 +89,13 @@ export default function ReturnCurveChart({
           <YAxis
             stroke="#64748b"
             tick={{ fontSize: 11 }}
-            width={64}
-            tickFormatter={(v) => `${v > 0 ? '+' : ''}${v.toFixed(0)}%`}
+            width={axisWidth}
+            domain={domain}
+            // Explicit ticks, not a count: given only a count recharts re-rounds
+            // the domain to suit them and reopens the empty space above the data
+            // that fitting the domain just closed.
+            ticks={ticks}
+            tickFormatter={(v) => formatReturn(v)}
             label={{ value: 'Return on premium', angle: -90, position: 'insideLeft', offset: 4, style: { fontSize: 12, fill: '#64748b' } }}
           />
           <Tooltip content={<CurveTooltip rows={rows} count={count} spot={spot} />} />
@@ -151,6 +158,67 @@ export default function ReturnCurveChart({
 }
 
 /**
+ * Y bounds fitted to the lines, plus the room their labels need.
+ *
+ * Recharts' own tick-rounding is built for ordinary ranges: given a series that
+ * tops out near 850,000% it picks an axis reaching 1,800,000% and spends two
+ * thirds of the plot on empty space above the data and below −100%, which no
+ * option can reach anyway.
+ */
+function returnAxis(data, rows, count) {
+  const keys = ['shares', ...rows.slice(0, count).map((_, i) => `c${i}`)];
+  let low = Infinity;
+  let high = -Infinity;
+  for (const point of data) {
+    for (const key of keys) {
+      const v = point[key];
+      if (!Number.isFinite(v)) continue;
+      if (v < low) low = v;
+      if (v > high) high = v;
+    }
+  }
+  if (!Number.isFinite(low) || !Number.isFinite(high)) {
+    return { domain: ['auto', 'auto'], ticks: undefined, axisWidth: 78 };
+  }
+
+  // Fitting the domain to the data is only half of it: given exact bounds
+  // recharts spaces its ticks evenly between them and prints −89,947% and
+  // +410,053%. Pick a round step, place the ticks on multiples of it, and every
+  // label is a number worth reading.
+  //
+  // Only the top is rounded out to a whole step. Rounding the bottom too spent a
+  // quarter of the plot on space below −500,000% when nothing can fall past
+  // −100%: an option buyer's loss is capped at the premium, so the floor of this
+  // chart is always −100% however large the step above it grows.
+  const step = niceStep(high - low || 1);
+  const lower = low - (high - low) * 0.03;
+  const upper = Math.ceil(high / step) * step;
+  const bounds = [lower, upper];
+
+  // Wide enough for the longest label the axis can print — "−1,200,000%" does
+  // not fit the default gutter.
+  const widest = Math.max(...bounds.map((v) => formatReturn(v).length));
+
+  const ticks = [];
+  for (let v = Math.ceil(lower / step) * step; v <= upper + step / 2; v += step) ticks.push(Math.round(v));
+
+  return { domain: bounds, ticks, axisWidth: Math.max(64, widest * 7 + 12) };
+}
+
+/** A round step — 1, 2, 2.5 or 5 times a power of ten — giving about six ticks. */
+function niceStep(range, targetTicks = 6) {
+  const raw = range / targetTicks;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const normalized = raw / magnitude;
+  const rounded = normalized <= 1 ? 1
+    : normalized <= 2 ? 2
+      : normalized <= 2.5 ? 2.5
+        : normalized <= 5 ? 5
+          : 10;
+  return rounded * magnitude;
+}
+
+/**
  * A dot on one x only — where the view sits — so each line visibly touches the
  * number its row in the table reports. Recharts calls this for every point, so
  * everything else returns null rather than drawing.
@@ -166,7 +234,7 @@ function markerDot(colour, at) {
 function CurveTooltip({ active, payload, label, rows, count, spot }) {
   if (!active || !payload?.length) return null;
   const point = payload[0].payload;
-  const pct = (v) => `${v > 0 ? '+' : ''}${v.toFixed(0)}%`;
+  const pct = formatReturn;
 
   // Ranked by what each line is worth at this price, not by the table's order:
   // the whole point of hovering is to see which contract wins *here*.

@@ -404,10 +404,20 @@ export function sortRows(rows, rankBy = 'expiry') {
   return [...rows].sort((a, b) => value(b) - value(a) || a.cost - b.cost);
 }
 
-/** The x-axis for the return chart: symmetric around zero, wide enough to hold the view. */
+/**
+ * The x-axis for the return chart: wide enough to hold the view with room
+ * either side of it, and floored on the downside because a share price cannot
+ * fall by more than all of it.
+ *
+ * The axis used to be symmetric, which was harmless while views were small and
+ * nonsense once they were not: a +200% view produced an axis reaching −320%,
+ * three hundred percent of which describes prices below zero.
+ */
+export const MAX_DOWN = 95;
+
 export function curveRange(priceChangePct, { minimum = 30 } = {}) {
-  const reach = Math.max(minimum, Math.abs(priceChangePct) * 1.6);
-  return Math.ceil(reach / 5) * 5;
+  const up = Math.ceil(Math.max(minimum, Math.abs(priceChangePct) * 1.6) / 5) * 5;
+  return { up, down: Math.min(up, MAX_DOWN) };
 }
 
 /**
@@ -428,17 +438,23 @@ export function returnCurves(rows, {
   // they disagree.
   markAt = null,
   rate = RISK_FREE_RATE,
-  reach = 40,
-  steps = 61,
+  range = { up: 40, down: 40 },
+  // A wide axis needs more points: at a +500% view the default grid steps 15%
+  // at a time, which rounds the kink at each strike into a curve it does not
+  // have. Cheap for the expiry basis, and worth the tree calls for the other.
+  steps = null,
   // Fewer tree steps than the table uses: this runs once per contract per point,
   // and the difference is invisible at chart resolution.
   treeSteps = 60,
 } = {}) {
   if (!(spot > 0) || !rows.length) return [];
 
+  const { up, down } = range;
+  const points = steps || (up > 200 ? 101 : 61);
+
   const axis = [];
-  for (let i = 0; i < steps; i += 1) axis.push(-reach + (2 * reach * i) / (steps - 1));
-  const marked = Number.isFinite(markAt) && markAt > -reach && markAt < reach;
+  for (let i = 0; i < points; i += 1) axis.push(-down + ((up + down) * i) / (points - 1));
+  const marked = Number.isFinite(markAt) && markAt > -down && markAt < up;
   // A symmetric axis already lands exactly on zero, so a zero view needs no
   // extra point — inserting one would duplicate it.
   if (marked && !axis.some((x) => x === markAt)) {
@@ -475,6 +491,28 @@ export function returnCurves(rows, {
   return out;
 }
 
+/**
+ * A percentage return, signed and grouped.
+ *
+ * Once the price slider reaches +500% these run to six figures — a penny option
+ * on a six-fold move really does return eight hundred thousand percent — and
+ * "847850%" is not a number anyone can read at a glance.
+ */
+export function formatReturn(v, { decimals = 0 } = {}) {
+  if (!Number.isFinite(v)) return '—';
+  const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+  return `${sign}${Math.abs(v).toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}%`;
+}
+
+/** Whole dollars, grouped. */
+export function formatDollars(v) {
+  if (!Number.isFinite(v)) return '—';
+  return `$${Math.round(v).toLocaleString()}`;
+}
+
 /** A short human label for a contract, used in tables, legends and tooltips. */
 export function contractLabel(row) {
   const [y, m, d] = row.expiration.split('-');
@@ -509,7 +547,9 @@ export function screenVerdict(rows, { priceChangePct, spot, basis, ticker }) {
   // Against the *size* of the move, not its sign: a put returning 437% on a 25%
   // fall is 17× the move, not −17×.
   const size = Math.abs(priceChangePct);
-  const multiple = size > 0 ? `, roughly ${(ret / size).toFixed(1)}× the move` : '';
+  const multiple = size > 0
+    ? `, roughly ${(ret / size).toLocaleString(undefined, { maximumFractionDigits: 1 })}× the move`
+    : '';
   const benchmark = priceChangePct >= 0
     ? `${priceChangePct.toFixed(0)}% for holding the shares`
     : `${size.toFixed(0)}% for shorting them`;
@@ -523,7 +563,7 @@ export function screenVerdict(rows, { priceChangePct, spot, basis, ticker }) {
       tone: 'caution',
       headline:
         `If ${ticker} ${direction} ${size.toFixed(0)}% to $${target.toFixed(2)} straight away, the ${contractLabel(best)} ` +
-        `at $${best.entry.toFixed(2)} gains the most — ${ret.toFixed(0)}% — but it is worth nothing at that same price by ` +
+        `at $${best.entry.toFixed(2)} gains the most — ${formatReturn(ret)} — but it is worth nothing at that same price by ` +
         'expiry. All of that return is time value you would have to sell before it decays, not a payoff you can hold for. ' +
         'Rank at expiration instead if you intend to hold.',
     };
@@ -533,7 +573,7 @@ export function screenVerdict(rows, { priceChangePct, spot, basis, ticker }) {
     tone: 'positive',
     headline:
       `If ${ticker} ${direction} ${size.toFixed(0)}% to $${target.toFixed(2)}, the best contract in range ` +
-      `is the ${contractLabel(best)} at $${best.entry.toFixed(2)} — a ${ret.toFixed(0)}% return against ` +
+      `is the ${contractLabel(best)} at $${best.entry.toFixed(2)} — a ${formatReturn(ret)} return against ` +
       `${benchmark}${multiple}. ` +
       `Its delta of ${best.delta === null ? 'n/a' : best.delta.toFixed(2)} is the market's own estimate of the odds it pays at all.`,
   };

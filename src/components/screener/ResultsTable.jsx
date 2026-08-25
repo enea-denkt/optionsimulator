@@ -1,5 +1,6 @@
 import { formatExpiration } from '@/api/marketData';
 import { TABLEAU_20 } from './ReturnCurveChart';
+import { formatReturn, formatDollars } from '@/lib/contractScreener';
 
 /**
  * The ranking itself.
@@ -19,7 +20,7 @@ export default function ResultsTable({
 }) {
   if (!rows.length) return null;
 
-  const pct = (v) => (Number.isFinite(v) ? `${v > 0 ? '+' : ''}${v.toFixed(0)}%` : '—');
+  const pct = formatReturn;
   const headline = (r) => (basis === 'now' ? r.returnNowPct : r.returnAtExpiryPct);
   // Only the top of the ranking has a winner to point at. Tinting the first row
   // of the bottom table would mark the least-bad loser as the best of the lot.
@@ -32,7 +33,7 @@ export default function ResultsTable({
       `Bid ${r.bid.toFixed(2)} / ask ${r.ask.toFixed(2)}`,
       r.iv === null ? null : `IV ${r.iv.toFixed(0)}%${basis === 'now' && r.movedIV !== null ? ` → ${r.movedIV.toFixed(0)}%` : ''}`,
       `Breakeven $${r.breakeven.toFixed(2)} (${pct(r.moveToBreakevenPct)})`,
-      `Profit at expiry ${r.profitAtExpiry > 0 ? '+' : '−'}$${Math.abs(r.profitAtExpiry).toFixed(0)}`,
+      `Profit at expiry ${r.profitAtExpiry > 0 ? '+' : '−'}${formatDollars(Math.abs(r.profitAtExpiry))}`,
       `Open interest ${r.openInterest.toLocaleString()}`,
     ]
       .filter(Boolean)
@@ -102,7 +103,7 @@ export default function ResultsTable({
                   )}
                 </td>
                 <Td>{row.dte}</Td>
-                <Td>${row.cost.toFixed(0)}</Td>
+                <Td>{formatDollars(row.cost)}</Td>
                 {!compact && <Td muted>{row.bid.toFixed(2)} / {row.ask.toFixed(2)}</Td>}
                 <Td
                   strong={basis === 'expiry'}
@@ -120,7 +121,7 @@ export default function ResultsTable({
                 </Td>
                 {!compact && (
                   <Td tone={row.profitAtExpiry > 0 ? 'good' : 'bad'}>
-                    {row.profitAtExpiry > 0 ? '+' : '−'}${Math.abs(row.profitAtExpiry).toFixed(0)}
+                    {row.profitAtExpiry > 0 ? '+' : '−'}{formatDollars(Math.abs(row.profitAtExpiry))}
                   </Td>
                 )}
                 {!compact && (

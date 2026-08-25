@@ -11,7 +11,7 @@ import ReturnCurveChart from '@/components/screener/ReturnCurveChart';
 import { fetchOptionChain } from '@/api/marketData';
 import { listExpirations } from '@/lib/optionAnalytics';
 import {
-  screenContracts, returnCurves, curveRange, screenVerdict,
+  screenContracts, returnCurves, curveRange, screenVerdict, formatReturn,
   LIQUIDITY_FILTERS, RANK_BASES, VARIETY_MODES, bestPerExpiration, funnelNote,
 } from '@/lib/contractScreener';
 import { useUrlState, asString, asNumber, asEnum } from '@/lib/useUrlState';
@@ -148,13 +148,15 @@ export default function ContractFinder() {
     () => pool.slice(Math.max(TOP_N, pool.length - TOP_N)).reverse(),
     [pool],
   );
-  const reach = curveRange(priceChange);
+  // Memoised because it is an object: a fresh one each render would defeat the
+  // curve memo below, which is the expensive one.
+  const range = useMemo(() => curveRange(priceChange), [priceChange]);
 
   const curves = useMemo(
     () => returnCurves(top.slice(0, plotted), {
-      spot, basis, reach, ivChangePct: ivChange, markAt: priceChange,
+      spot, basis, range, ivChangePct: ivChange, markAt: priceChange,
     }),
-    [top, plotted, spot, basis, reach, ivChange, priceChange],
+    [top, plotted, spot, basis, range, ivChange, priceChange],
   );
 
   const verdict = useMemo(
@@ -246,7 +248,7 @@ export default function ContractFinder() {
                   ? `From $${spot.toFixed(2)} to $${target.toFixed(2)} by expiry`
                   : 'The move you expect in the underlying, by expiry'
               }
-              min={-60} max={100} step={1}
+              min={-90} max={500} step={1}
               onChange={(v) => set({ priceChange: v })}
             />
 
@@ -330,11 +332,7 @@ export default function ContractFinder() {
             />
             <MetricTile
               label="Best return"
-              value={
-                top.length
-                  ? `${(basis === 'now' ? top[0].returnNowPct : top[0].returnAtExpiryPct).toFixed(0)}%`
-                  : '—'
-              }
+              value={top.length ? formatReturn(basis === 'now' ? top[0].returnNowPct : top[0].returnAtExpiryPct) : '—'}
               hint={
                 top.length
                   ? `At $${target.toFixed(2)} exactly — ${RANK_BASES.find((b) => b.id === basis)?.blurb.toLowerCase()}`
