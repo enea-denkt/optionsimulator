@@ -113,6 +113,7 @@ Deploy history (`gh-pages` sha → built from `main` sha):
 * `322ecdf` → `6a505a8` — 2026-08-25, bottom-20 table beside the top
 * `0efeb0d` → `633c004` — 2026-08-25, screening funnel explained on the page
 * `dd4aa21` → `a1313f3` — 2026-08-25, chart marks the point the table reports
+* `7bdca20` → `979f3ce` — 2026-08-25, price view to +500%, fitted return axis
 
 ## When gh-pages is right but the site is stale
 
