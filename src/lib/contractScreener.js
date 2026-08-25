@@ -422,6 +422,11 @@ export function returnCurves(rows, {
   spot,
   basis = 'expiry',
   ivChangePct = 0,
+  // The view itself is forced onto the axis as an exact point. Without it the
+  // nearest grid point lands a couple of percent away, every line is drawn a
+  // point or two off the number in the table beside it, and the two look like
+  // they disagree.
+  markAt = null,
   rate = RISK_FREE_RATE,
   reach = 40,
   steps = 61,
@@ -431,9 +436,18 @@ export function returnCurves(rows, {
 } = {}) {
   if (!(spot > 0) || !rows.length) return [];
 
+  const axis = [];
+  for (let i = 0; i < steps; i += 1) axis.push(-reach + (2 * reach * i) / (steps - 1));
+  const marked = Number.isFinite(markAt) && markAt > -reach && markAt < reach;
+  // A symmetric axis already lands exactly on zero, so a zero view needs no
+  // extra point — inserting one would duplicate it.
+  if (marked && !axis.some((x) => x === markAt)) {
+    axis.push(markAt);
+    axis.sort((a, b) => a - b);
+  }
+
   const out = [];
-  for (let i = 0; i < steps; i += 1) {
-    const movePct = -reach + (2 * reach * i) / (steps - 1);
+  for (const movePct of axis) {
     const price = spot * (1 + movePct / 100);
     const point = { movePct, shares: movePct };
 
@@ -444,7 +458,11 @@ export function returnCurves(rows, {
         // from the target: a contract's place on the smile changes all the way
         // along, which is most of why these curves bend the way they do.
         const vol = scenarioIV(row, { spot, price, ivChangePct });
-        value = americanOptionPrice(price, row.strike, row.dte, vol, rate, row.optionType, treeSteps);
+        // The marked point is the one the table also reports, so it is priced
+        // at full resolution; a point off by one percent there reads as the two
+        // disagreeing. Everywhere else the coarser tree is invisible.
+        const treeAt = movePct === markAt ? 100 : treeSteps;
+        value = americanOptionPrice(price, row.strike, row.dte, vol, rate, row.optionType, treeAt);
       } else {
         value = intrinsic(price, row.strike, row.optionType);
       }

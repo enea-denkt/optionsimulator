@@ -48,6 +48,8 @@ export default function ReturnCurveChart({
       }
       icon={LineChartIcon}
       footnote={
+        `The axis runs well past your view on both sides, so the far right is a bigger move than you asked for and ` +
+        'pays more than the table says. The table reads off the marked point only. ' +
         'Every line starts at −100%: the premium is the whole of what an option buyer can lose, and below the strike ' +
         'that is exactly what happens. The shares lose only what the stock loses. That trade — a floor on the downside ' +
         'in exchange for needing to be right about size and timing — is the entire decision this page is for.'
@@ -71,7 +73,7 @@ export default function ReturnCurveChart({
       }
     >
       <ResponsiveContainer width="100%" height={420}>
-        <LineChart data={data} margin={{ top: 10, right: 16, left: 8, bottom: 24 }}>
+        <LineChart data={data} margin={{ top: 30, right: 16, left: 8, bottom: 24 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis
             dataKey="movePct"
@@ -95,8 +97,13 @@ export default function ReturnCurveChart({
           <ReferenceLine
             x={expectedMovePct}
             stroke="#0f172a"
+            strokeWidth={1.5}
             strokeDasharray="4 4"
-            label={{ value: 'Your view', position: 'top', style: { fontSize: 11, fill: '#0f172a' } }}
+            label={{
+              value: `Your view: ${expectedMovePct > 0 ? '+' : ''}${expectedMovePct}% — the table reads here`,
+              position: 'top',
+              style: { fontSize: 11, fontWeight: 600, fill: '#0f172a' },
+            }}
           />
 
           {/* Drawn first so the contracts sit on top of the benchmark. */}
@@ -106,7 +113,7 @@ export default function ReturnCurveChart({
             stroke={SHARES}
             strokeWidth={2}
             strokeDasharray="6 4"
-            dot={false}
+            dot={markerDot(SHARES, expectedMovePct)}
             isAnimationActive={false}
           />
           {rows.slice(0, count).map((row, i) => (
@@ -116,7 +123,7 @@ export default function ReturnCurveChart({
               name={contractLabel(row)}
               stroke={TABLEAU_20[i % TABLEAU_20.length]}
               strokeWidth={1.8}
-              dot={false}
+              dot={markerDot(TABLEAU_20[i % TABLEAU_20.length], expectedMovePct)}
               isAnimationActive={false}
             />
           ))}
@@ -141,6 +148,19 @@ export default function ReturnCurveChart({
       </div>
     </InsightCard>
   );
+}
+
+/**
+ * A dot on one x only — where the view sits — so each line visibly touches the
+ * number its row in the table reports. Recharts calls this for every point, so
+ * everything else returns null rather than drawing.
+ */
+function markerDot(colour, at) {
+  const Marker = ({ cx, cy, payload }) =>
+    payload?.movePct === at && Number.isFinite(cy) ? (
+      <circle cx={cx} cy={cy} r={4} fill={colour} stroke="#fff" strokeWidth={1.5} />
+    ) : null;
+  return <Marker />;
 }
 
 function CurveTooltip({ active, payload, label, rows, count, spot }) {

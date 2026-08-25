@@ -151,8 +151,10 @@ export default function ContractFinder() {
   const reach = curveRange(priceChange);
 
   const curves = useMemo(
-    () => returnCurves(top.slice(0, plotted), { spot, basis, reach, ivChangePct: ivChange }),
-    [top, plotted, spot, basis, reach, ivChange],
+    () => returnCurves(top.slice(0, plotted), {
+      spot, basis, reach, ivChangePct: ivChange, markAt: priceChange,
+    }),
+    [top, plotted, spot, basis, reach, ivChange, priceChange],
   );
 
   const verdict = useMemo(
@@ -333,7 +335,11 @@ export default function ContractFinder() {
                   ? `${(basis === 'now' ? top[0].returnNowPct : top[0].returnAtExpiryPct).toFixed(0)}%`
                   : '—'
               }
-              hint={RANK_BASES.find((b) => b.id === basis)?.blurb}
+              hint={
+                top.length
+                  ? `At $${target.toFixed(2)} exactly — ${RANK_BASES.find((b) => b.id === basis)?.blurb.toLowerCase()}`
+                  : RANK_BASES.find((b) => b.id === basis)?.blurb
+              }
               tone={top.length && (basis === 'now' ? top[0].returnNowPct : top[0].returnAtExpiryPct) > 0 ? 'positive' : 'default'}
             />
           </div>
