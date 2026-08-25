@@ -112,6 +112,7 @@ Deploy history (`gh-pages` sha → built from `main` sha):
 * `9500482` → `e68422c` — 2026-08-25, contract finder page
 * `322ecdf` → `6a505a8` — 2026-08-25, bottom-20 table beside the top
 * `0efeb0d` → `633c004` — 2026-08-25, screening funnel explained on the page
+* `dd4aa21` → `a1313f3` — 2026-08-25, chart marks the point the table reports
 
 ## When gh-pages is right but the site is stale
 
