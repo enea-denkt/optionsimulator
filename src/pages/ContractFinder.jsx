@@ -128,9 +128,19 @@ export default function ContractFinder() {
 
   // Collapsing to one row per expiry happens after ranking, so the "contracts
   // screened" count keeps meaning how many were actually priced.
-  const top = useMemo(
-    () => (variety === 'expiry' ? bestPerExpiration(ranked) : ranked).slice(0, TOP_N),
+  const pool = useMemo(
+    () => (variety === 'expiry' ? bestPerExpiration(ranked) : ranked),
     [ranked, variety],
+  );
+
+  const top = useMemo(() => pool.slice(0, TOP_N), [pool]);
+
+  // The other end of the same ranking, worst first. Sliced from TOP_N rather
+  // than from the end, so a short list cannot show the same contract in both
+  // tables and imply it is somehow both the best and the worst.
+  const bottom = useMemo(
+    () => pool.slice(Math.max(TOP_N, pool.length - TOP_N)).reverse(),
+    [pool],
   );
   const reach = curveRange(priceChange);
 
@@ -340,16 +350,49 @@ export default function ContractFinder() {
                 onCountChange={(v) => set({ plotted: v })}
               />
 
-              <div>
-                <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  Top {top.length} of {ranked.length.toLocaleString()} contracts screened
-                </h3>
-                <ResultsTable
-                  rows={top}
-                  spot={spot}
-                  basis={basis}
-                  plotted={Math.min(plotted, top.length)}
-                />
+              {/* Both ends of one ranking, side by side: the contrast is the
+                  point, so they share a row rather than stacking. */}
+              <div className={`grid gap-6 ${bottom.length ? 'xl:grid-cols-2' : ''}`}>
+                <div className="min-w-0">
+                  <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                    Best {top.length} of {pool.length.toLocaleString()}
+                  </h3>
+                  <p className="mb-3 text-xs text-slate-500">
+                    The most return per dollar of premium if the view comes true.
+                  </p>
+                  <ResultsTable
+                    rows={top}
+                    spot={spot}
+                    basis={basis}
+                    plotted={Math.min(plotted, top.length)}
+                    compact={bottom.length > 0}
+                    footnote={`Priced off the ask, so the cost is what opening the position would actually take. Shares at $${spot.toFixed(2)}. Hover a row for its bid, ask, breakeven and open interest.`}
+                  />
+                </div>
+
+                {bottom.length > 0 && (
+                  <div className="min-w-0">
+                    <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                      Worst {bottom.length} of {pool.length.toLocaleString()}
+                    </h3>
+                    <p className="mb-3 text-xs text-slate-500">
+                      The same view, expressed as badly as this chain allows — worst first.
+                    </p>
+                    <ResultsTable
+                      rows={bottom}
+                      spot={spot}
+                      basis={basis}
+                      startRank={pool.length}
+                      descending
+                      compact
+                      footnote={
+                        'These are ranked by the same measure as the table beside them, from the bottom. Where a ' +
+                        'whole block returns −100% the order within it is by cost, so the last row is the most ' +
+                        'expensive way this chain offers to be wrong.'
+                      }
+                    />
+                  </div>
+                )}
               </div>
             </>
           )}
