@@ -328,6 +328,41 @@ grid handles a dense matrix of labelled cells with a sticky axis better anyway.
 Intensity scales with the *square root* of magnitude, because one or two strikes
 dominate any chain and a linear scale leaves everything else invisible.
 
+## 11b. Ranking every contract against a price view
+
+The contract finder prices the whole chain against a target and sorts by return
+on premium. Three things it taught, all discovered by looking at what it
+surfaced rather than by reasoning ahead of time.
+
+**At expiration, an implied-volatility view is worth nothing.** Only intrinsic
+value is left, so `max(target − strike, 0)` against the ask is the entire
+calculation — exact, no model. That is why the page carries a second column,
+"if it happens now", which reprices through the binomial tree with time value
+still on: it is the only place an IV assumption can bite. Ranking by the two
+gives genuinely different lists, so both are offered and the difference is
+stated rather than hidden.
+
+**Sticky strike wrecks the "now" ranking, and the failure is loud.** Hold each
+contract's own IV fixed and move spot toward its strike, and MSTR's $420 call —
+quoted at 154% IV, four cents — reprices to about seventy cents at a target of
+$152. A 1,600% return, on a contract worth exactly nothing at that same price at
+expiry. The whole top twenty filled with those. The fix is sticky moneyness: a
+contract that slides toward the money gives up its wing volatility on the way
+in, so it is repriced at whatever *its new moneyness* is quoted at today, read
+off the chain's own smile for that expiration. The IV view then shifts the whole
+curve on top. Measured on the same contract: 1,601% → 906%.
+
+**A smile read at a sliding strike must be cleaned first.** The lookup strike
+moves continuously as the price axis moves, so one ragged IV point becomes a
+spike in every return line that crosses it — the chart had a visible 400-point
+spike before this. Two fixes together: drop strikes with no bid (a dead strike's
+IV is whatever the exchange's model returned for a stale quote, and it sits well
+off its neighbours' curve), then smooth what survives with a three-point kernel.
+
+Related: contracts with no bid are excluded from the ranking entirely. An ask
+nobody bids against is a quote, not a market, and 19 of MSTR's 1,072 candidates
+were exactly that — including two in the top twenty.
+
 ## 12. Deployment specifics for GitHub Pages
 
 * `base` must match the repo path (`/optionsimulator/`), and the router `basename`
@@ -448,3 +483,8 @@ git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-
 * The stock-return benchmark shares one Y axis with the option's net return. That
   is correct — same units — but when the option returns thousands of percent the
   stock line flattens visually. A log-scale toggle would be the fix if it matters.
+  The contract finder's return chart has the same property, more acutely.
+* **The finder ranks return, never probability.** The top of any such list is the
+  contract that needs you to be most exactly right; delta sits in the next column
+  as the market's own odds, but nothing weights by it. A probability-weighted
+  ranking is a different and defensible page, and does not exist yet.

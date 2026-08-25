@@ -4,6 +4,7 @@ import OptionsSimulator from './OptionsSimulator';
 import ChainInsights from './ChainInsights';
 import TickerComparison from './TickerComparison';
 import DealerExposure from './DealerExposure';
+import ContractFinder from './ContractFinder';
 
 /**
  * Routes are relative to Vite's `base` (applied as the router basename in
@@ -23,6 +24,7 @@ export default function Pages() {
         <Route path="/insights" element={<ChainInsights />} />
         <Route path="/compare" element={<TickerComparison />} />
         <Route path="/exposure" element={<DealerExposure />} />
+        <Route path="/finder" element={<ContractFinder />} />
         {/* Unknown paths fall back to the simulator rather than a blank page. */}
         <Route path="*" element={<OptionsSimulator />} />
       </Routes>
