@@ -12,7 +12,7 @@ import { fetchOptionChain } from '@/api/marketData';
 import { listExpirations } from '@/lib/optionAnalytics';
 import {
   screenContracts, returnCurves, curveRange, screenVerdict,
-  LIQUIDITY_FILTERS, RANK_BASES, VARIETY_MODES, bestPerExpiration,
+  LIQUIDITY_FILTERS, RANK_BASES, VARIETY_MODES, bestPerExpiration, funnelNote,
 } from '@/lib/contractScreener';
 import { useUrlState, asString, asNumber, asEnum } from '@/lib/useUrlState';
 import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
@@ -113,8 +113,8 @@ export default function ContractFinder() {
 
   const minOpenInterest = LIQUIDITY_FILTERS.find((f) => f.id === liquidity)?.minOpenInterest ?? 0;
 
-  const ranked = useMemo(() => {
-    if (!chain) return [];
+  const screen = useMemo(() => {
+    if (!chain) return { rows: [], counts: null };
     return screenContracts(chain, {
       priceChangePct: priceChange,
       ivChangePct: ivChange,
@@ -125,6 +125,12 @@ export default function ContractFinder() {
       rankBy: basis,
     });
   }, [chain, priceChange, ivChange, minDte, maxDte, side, minOpenInterest, basis]);
+
+  const ranked = screen.rows;
+  const funnel = useMemo(
+    () => funnelNote(screen.counts, { chain, side, minOpenInterest }),
+    [screen.counts, chain, side, minOpenInterest],
+  );
 
   // Collapsing to one row per expiry happens after ranking, so the "contracts
   // screened" count keeps meaning how many were actually priced.
@@ -314,7 +320,11 @@ export default function ContractFinder() {
             <MetricTile
               label="Contracts screened"
               value={ranked.length.toLocaleString()}
-              hint={`In ${minDte}–${maxDte} days, ${minOpenInterest ? `${minOpenInterest}+ open interest` : 'any open interest'}`}
+              hint={
+                screen.counts && screen.counts.inWindow > ranked.length
+                  ? `Of ${screen.counts.inWindow.toLocaleString()} listed in ${minDte}–${maxDte} days`
+                  : `In ${minDte}–${maxDte} days, ${minOpenInterest ? `${minOpenInterest}+ open interest` : 'any open interest'}`
+              }
             />
             <MetricTile
               label="Best return"
@@ -331,9 +341,12 @@ export default function ContractFinder() {
           <Card className="border-slate-200 shadow-lg">
             <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:gap-6 sm:p-6">
               <Target className="h-8 w-8 shrink-0" style={{ color: '#A0CBF5' }} />
-              <p className={`min-w-0 rounded-lg border px-3 py-2 text-sm ${toneClass}`}>
-                {verdict.headline}
-              </p>
+              <div className="min-w-0 space-y-2">
+                <p className={`rounded-lg border px-3 py-2 text-sm ${toneClass}`}>
+                  {verdict.headline}
+                </p>
+                {funnel && <p className="text-xs text-slate-500">{funnel}</p>}
+              </div>
             </CardContent>
           </Card>
 

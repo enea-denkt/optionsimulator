@@ -254,7 +254,12 @@ export function screenContracts(chain, {
   today = new Date(),
 } = {}) {
   const spot = Number(chain?.stockPrice) || 0;
-  if (!(spot > 0)) return [];
+  // Every stage of the funnel is counted, because "13 contracts screened" is an
+  // alarming number without the sentence that explains it, and the explanation
+  // is never the same twice: sometimes one expiration exists in the window,
+  // sometimes half the chain is adjusted, sometimes it is the filters.
+  const counts = { inWindow: 0, side: 0, openInterest: 0, bid: 0, priced: 0, expirations: 0 };
+  if (!(spot > 0)) return { rows: [], counts };
 
   const target = spot * (1 + priceChangePct / 100);
   const all = flatten(chain, today);
@@ -271,16 +276,27 @@ export function screenContracts(chain, {
 
   const rows = [];
 
+  const expirationsSeen = new Set();
+
   for (const contract of all) {
     if (contract.dte < minDte || contract.dte > maxDte) continue;
+    counts.inWindow += 1;
+    expirationsSeen.add(contract.expiration);
+
     if (side !== 'both' && contract.optionType !== side) continue;
+    counts.side += 1;
+
     if (Number(contract.openInterest || 0) < minOpenInterest) continue;
+    counts.openInterest += 1;
+
     // No bid means nobody is buying at any price. The ask is then a quote, not a
     // market, and a return computed against it is arithmetic rather than money.
     if (requireBid && !(Number(contract.bid) > 0)) continue;
+    counts.bid += 1;
 
     const entry = entryPrice(contract);
     if (!(entry > 0)) continue;
+    counts.priced += 1;
 
     const iv = Number(contract.implied_volatility) > 0 ? contract.implied_volatility * 100 : null;
 
@@ -327,7 +343,44 @@ export function screenContracts(chain, {
     });
   }
 
-  return sortRows(rows, rankBy);
+  counts.expirations = expirationsSeen.size;
+  return { rows: sortRows(rows, rankBy), counts };
+}
+
+/**
+ * One sentence saying where the candidates went, or null when nothing needs
+ * saying because nothing was dropped.
+ */
+export function funnelNote(counts, { chain, side, minOpenInterest } = {}) {
+  if (!counts || !counts.inWindow) return null;
+
+  const parts = [];
+  const add = (n, phrase) => { if (n > 0) parts.push(`${n.toLocaleString()} ${phrase}`); };
+  add(counts.inWindow - counts.side, 'on the other side of the market');
+  add(counts.side - counts.openInterest, `below the ${minOpenInterest.toLocaleString()} open-interest floor`);
+  add(counts.openInterest - counts.bid, 'with no bid');
+  add(counts.bid - counts.priced, 'with no price quoted');
+
+  const expiries = `${counts.expirations} expiration${counts.expirations === 1 ? '' : 's'}`;
+  const head = `${counts.inWindow.toLocaleString()} contracts list across ${expiries} in this window.`;
+
+  const dropped = counts.inWindow - counts.priced;
+  const list = parts.length > 1
+    ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+    : parts[0];
+  const middle = parts.length
+    ? ` Of those, ${list} ${dropped === 1 ? 'is' : 'are'} filtered out, leaving ${counts.priced.toLocaleString()}.`
+    : '';
+
+  // The adjusted series are dropped before the screener ever sees the chain, so
+  // they never appear in the funnel above — but on some names they are most of
+  // what a broker's chain shows, which makes their absence the whole question.
+  const adjusted = Number(chain?.adjustedCount) || 0;
+  const tail = adjusted
+    ? ` ${chain.symbol} also lists ${adjusted.toLocaleString()} adjusted contracts, excluded everywhere in this app: one of them no longer delivers 100 ordinary shares, so none of these numbers would apply to it.`
+    : '';
+
+  return `${head}${middle}${tail}`;
 }
 
 /** First row of each expiration in an already-ranked list — so, the best of each. */

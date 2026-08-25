@@ -194,6 +194,10 @@ function normalizeChain(payload, symbol) {
   // list a 15-strike Jan-2028 call at very different prices).
   const bySymbol = new Map();
   let kept = 0;
+  // Counted, not just dropped: on a name like ASST the adjusted series are most
+  // of the chain, and a page that silently screens a third of what the user can
+  // see on their broker's screen owes them an explanation.
+  let adjusted = 0;
 
   for (const quote of data.options || []) {
     const parsed = parseOccSymbol(quote.option);
@@ -203,7 +207,7 @@ function normalizeChain(payload, symbol) {
     // Adjusted series are dropped rather than shown: one contract no longer
     // delivers 100 ordinary shares, so the simulator's payoff model does not
     // apply to them and every number it produces would be wrong.
-    if (isAdjustedRoot(parsed.root, symbol)) continue;
+    if (isAdjustedRoot(parsed.root, symbol)) { adjusted += 1; continue; }
 
     const contract = {
       expiration: parsed.expiration,
@@ -255,6 +259,7 @@ function normalizeChain(payload, symbol) {
     priceChangePercent: Number(data.price_change_percent) || 0,
     quoteTime: payload.timestamp || data.last_trade_time || null,
     contractCount: kept,
+    adjustedCount: adjusted,
     contracts,
     bySymbol,
   };
