@@ -37,8 +37,6 @@ export default function VolatilityEnvironmentChart({
   currentLabel,
   footnote,
   isImplied,
-  estimated,      // the level is reconstructed, not recorded — say so on the face of it
-  colour,
   rangeControl,
 }) {
   if (!stats || series.length < 30) {
@@ -51,7 +49,7 @@ export default function VolatilityEnvironmentChart({
     );
   }
 
-  const levelColour = colour || (isImplied ? BRAND : RV_COLOUR);
+  const levelColour = isImplied ? BRAND : RV_COLOUR;
   const shown = method === 'percentile' ? stats.percentile : stats.rank;
   const verdict = rankVerdict(shown, {
     subject: isImplied ? 'Market-wide implied volatility' : `${symbol} realized volatility`,
@@ -92,13 +90,6 @@ export default function VolatilityEnvironmentChart({
         </div>
       }
     >
-      {estimated && (
-        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          <strong>Estimated series.</strong> Only today&apos;s reading is quoted by the exchange. The
-          history behind it is reconstructed from how the stock actually moved and where the
-          market-wide level sat — read its shape, not its individual days.
-        </p>
-      )}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricTile
           label={currentLabel}
@@ -155,7 +146,6 @@ export default function VolatilityEnvironmentChart({
             dataKey="level"
             stroke={levelColour}
             strokeWidth={2}
-            strokeDasharray={estimated ? '5 4' : undefined}
             fill={levelColour}
             fillOpacity={0.1}
             isAnimationActive={false}
@@ -175,7 +165,7 @@ export default function VolatilityEnvironmentChart({
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-600">
         <span className="flex items-center gap-2">
           <span className="h-3 w-6 rounded-sm" style={{ backgroundColor: levelColour, opacity: 0.35 }} />
-          {currentLabel} (left axis){estimated ? ', estimated' : ''}
+          {currentLabel} (left axis)
         </span>
         <span className="flex items-center gap-2">
           <svg width="22" height="8" aria-hidden="true">

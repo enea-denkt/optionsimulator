@@ -37,7 +37,7 @@ Shared building blocks, all pure and node-testable:
 
 | Module | Holds |
 | --- | --- |
-| `src/api/marketData.js` | every network call; chains, quotes, price history, volatility indices, symbol search |
+| `src/api/marketData.js` | every network call; chains, quotes, price history, symbol search |
 | `src/lib/optionAnalytics.js` | smile, term structure, max pain, expected move, realized vol |
 | `src/lib/volatilityHistory.js` | rank and percentile, rolling series, VIX helpers, chart range windows |
 | `src/lib/optionComparison.js` | cross-name contract matching and the comparison metrics |
@@ -232,11 +232,10 @@ wrong and have already caused bugs:
 * **A contract's identity is its OCC symbol**, never `strike + expiration` — those
   collide across series (`ASST`/`ASST1`/`ASST2`, and `SPX`/`SPXW`). Look contracts
   up with `findContractByOcc(chain, occSymbol)`.
-* **Historical implied volatility exists only as an index.** The chain serves
-  today's IV and nothing older, but Cboe's volatility indices (`_VXAPL`, `_VXN`,
-  `_GVZ`, …) are keyless daily series going back years. `VOLATILITY_INDICES` maps
-  the ~20 underlyings that have one; every other ticker gets the clearly-labelled
-  estimate from `impliedVolProxySeries`. See learnings.md §Historical IV.
+* **There is no historical implied volatility for a ticker.** The chain serves
+  today's IV and nothing older, and every historical-IV endpoint 403s — verified
+  again on 2026-08-25. Do not add a per-ticker IV-over-time chart without a real
+  source behind it; one was built and removed the same day. See learnings.md.
 * **Adjusted series are filtered out** in `normalizeChain`, because the binomial
   model assumes 100 ordinary shares per contract. Adjusted roots end in a *digit*
   (`ASST1`); a trailing *letter* (`SPXW`, `NDXP`) is an ordinary separate series and

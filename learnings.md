@@ -214,29 +214,32 @@ What *does* have history is the volatility **indices**, and they are keyless:
 | `_VIX9D` / `_VIX3M` / `_VVIX` | 3,900–5,100 | 2006–2011 |
 | `_VXAPL`, `_VXAZN` | 3,919 | 2011 — only a handful of single names |
 
-That handful is worth more than it first looked. Checked again on 2026-08-25,
-all of `_VXAPL _VXAZN _VXGOG _VXIBM _VXGS _VXEEM _VXEWZ _VXFXI _VXGDX _VXSLV
-_VXTLT _GVZ _OVX _VXN _RVX _VXD` are still published and still current (last bar
-the previous session); `_VXXLE` died in 2022 and `_EVZ` in 2025. Each is a real
-30-day implied-volatility series for its underlying, so for those ~20 tickers the
-insights page ranks **actual implied volatility**, not a stand-in. The map lives
-in `VOLATILITY_INDICES` in `src/api/marketData.js`, and the deployed worker
-already allows the path — no `ALLOWED_PATHS` change was needed.
+Checked again on 2026-08-25 and the index list is healthier than expected: all
+of `_VXAPL _VXAZN _VXGOG _VXIBM _VXGS _VXEEM _VXEWZ _VXFXI _VXGDX _VXSLV _VXTLT
+_GVZ _OVX _VXN _RVX _VXD` are still published and still current (last bar the
+previous session); `_VXXLE` died in 2022 and `_EVZ` in 2025. Each is a real
+30-day implied-volatility series for its underlying, and the deployed worker
+already allows the path, so charting them needs no `ALLOWED_PATHS` change.
 
-For every other ticker the page draws an **estimated** IV history
-(`impliedVolProxySeries`): today's at-the-money IV from the chain, scaled back
-through time by a 60/40 blend of the stock's own realized volatility and VIX,
-each measured against where it sits today. The newest point is forced to equal
-the real quote exactly, so the chart's last value and the metric tile cannot
-disagree. It is drawn dashed, under an amber "estimated series" banner, and its
-rank is worth reading precisely because it lands somewhere neither of its inputs
-does — MSTR on 2026-08-25: estimated IV rank 23, realized rank 35.
+**An IV-over-time panel was built on that and then removed the same day.** Worth
+knowing why, because the idea will come back:
 
-Alongside it the page still ships the two honest substitutes: the ticker's
-**realized** volatility rank from its own closes, and **VIX** as the market-wide
-**implied** rank. A *recorded* per-ticker IV history still needs a licensed feed
-(ORATS, marketdata.app, Polygon) or saving this app's own IV reading daily until
-a year accumulates.
+* For the ~20 underlyings above it plotted the real index. For every other
+  ticker there is nothing to plot, so it drew an estimate — today's ATM IV
+  scaled back through time by a 60/40 blend of the stock's own realized
+  volatility and VIX. Anchored, dashed, and bannered as estimated, and its rank
+  did land somewhere neither input did (MSTR: estimated IV rank 23 against
+  realized 35).
+* It came out anyway. A panel that is real data for AAPL and an inference for
+  MSTR is two different charts wearing one title, and the names this app is
+  actually used on are the ones with no index. Reconstructed history invites
+  being read as recorded history no matter how it is labelled.
+
+So the page keeps the two honest substitutes: the ticker's **realized**
+volatility rank from its own closes, and **VIX** as the market-wide **implied**
+rank. Charting real per-ticker IV needs a licensed feed (ORATS, marketdata.app,
+Polygon) or saving this app's own IV reading daily until a year accumulates —
+the second costs nothing but time, and is the route to revisit.
 
 **Rank and percentile are different, and the difference matters.** Rank is
 `(now − low) / (high − low)`, so one spike a year ago holds every later reading

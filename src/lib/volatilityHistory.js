@@ -23,18 +23,11 @@
  * marketdata.app, Polygon) or recording this app's own IV reading once a day
  * and accumulating a year of it.
  *
- * ## The two ways implied volatility does get charted here
- *
- * Since that note was written, a third source turned out to exist for a short
- * list of names: Cboe publishes standalone *volatility indices* — VXAPL for
- * Apple, VXN for the Nasdaq, GVZ for gold and so on — as daily series going
- * back years, on the same public endpoint the price charts use. Those are real
- * implied volatility and are ranked like any other series. See
- * `VOLATILITY_INDICES` in src/api/marketData.js for the list.
- *
- * For every other ticker `impliedVolProxySeries` reconstructs an estimate,
- * anchored so that its newest point equals the chain's actual at-the-money IV
- * today. It is labelled as an estimate everywhere it is drawn.
+ * Cboe does publish standalone volatility indices for about twenty underlyings
+ * (VXAPL for Apple, VXN for the Nasdaq, GVZ for gold) as real daily IV series.
+ * They were charted here briefly and then removed: they cover too few of the
+ * names this app is used on to be worth a panel that appears for one ticker and
+ * vanishes for the next. See learnings.md if that trade-off is worth revisiting.
  */
 
 const TRADING_DAYS = 252;
@@ -184,63 +177,6 @@ export function rollingRankSeries(series, { window = RANK_WINDOW, method = 'rank
     const stats = rankAndPercentile(series.slice(i - window, i + 1), series[i].value, window + 1);
     if (stats) out.push({ date: series[i].date, value: method === 'percentile' ? stats.percentile : stats.rank });
   }
-  return out;
-}
-
-/**
- * An estimated history of at-the-money implied volatility, for tickers with no
- * volatility index of their own.
- *
- * The feed serves one IV reading — today's — so the shape of the series has to
- * come from somewhere else. Two observable drivers explain most of what
- * single-name implied volatility does:
- *
- *   1. **The stock's own realized volatility.** Implied tracks realized with a
- *      premium on top, and that premium is far steadier than either series.
- *   2. **The market-wide level (VIX).** Single-name premium is repriced in
- *      sympathy with the index even when the stock itself is quiet.
- *
- * So each day is scaled by a blend of the two, relative to where they sit today,
- * and multiplied by the chain's actual at-the-money IV. The newest point is
- * therefore the real number; every earlier point is an inference about what the
- * options would have cost then, not a record of what they did cost.
- *
- * What this is honestly good for: seeing whether today's premium is high or low
- * for this name. What it is not: a substitute for recorded IV history.
- */
-export function impliedVolProxySeries({
-  realizedSeries = [],
-  vixSeries = [],
-  atmIVPct,
-  realizedWeight = 0.6,
-} = {}) {
-  if (!(atmIVPct > 0) || realizedSeries.length < 30) return [];
-
-  const rvNow = realizedSeries[realizedSeries.length - 1].value;
-  if (!(rvNow > 0)) return [];
-
-  // VIX trades on the same session calendar but can be missing a day the stock
-  // has; carry the last known level forward rather than dropping the point.
-  const vixByDate = new Map(vixSeries.map((p) => [p.date, p.value]));
-  const vixNow = vixSeries.length ? vixSeries[vixSeries.length - 1].value : null;
-  const useVix = vixNow > 0 && vixSeries.length >= realizedSeries.length / 2;
-  const wRv = useVix ? Math.min(Math.max(realizedWeight, 0), 1) : 1;
-
-  const out = [];
-  let lastVix = null;
-  for (const point of realizedSeries) {
-    if (!(point.value > 0)) continue;
-    const vix = vixByDate.get(point.date) ?? lastVix;
-    if (vix > 0) lastVix = vix;
-
-    const rvLeg = point.value / rvNow;
-    const vixLeg = useVix && lastVix > 0 ? lastVix / vixNow : rvLeg;
-    out.push({ date: point.date, value: atmIVPct * (wRv * rvLeg + (1 - wRv) * vixLeg) });
-  }
-
-  // The anchor has to hold exactly, or the tile and the chart's last point
-  // disagree by a rounding wobble and the reader notices.
-  if (out.length) out[out.length - 1] = { date: out[out.length - 1].date, value: atmIVPct };
   return out;
 }
 
