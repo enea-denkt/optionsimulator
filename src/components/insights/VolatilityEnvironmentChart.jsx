@@ -37,6 +37,9 @@ export default function VolatilityEnvironmentChart({
   currentLabel,
   footnote,
   isImplied,
+  estimated,      // the level is reconstructed, not recorded — say so on the face of it
+  colour,
+  rangeControl,
 }) {
   if (!stats || series.length < 30) {
     return (
@@ -48,6 +51,7 @@ export default function VolatilityEnvironmentChart({
     );
   }
 
+  const levelColour = colour || (isImplied ? BRAND : RV_COLOUR);
   const shown = method === 'percentile' ? stats.percentile : stats.rank;
   const verdict = rankVerdict(shown, {
     subject: isImplied ? 'Market-wide implied volatility' : `${symbol} realized volatility`,
@@ -67,24 +71,34 @@ export default function VolatilityEnvironmentChart({
       tone={verdict?.tone}
       footnote={footnote}
       action={
-        <div className="flex rounded-lg border border-slate-200 p-0.5">
-          {Object.values(RANK_METHODS).map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => onMethodChange(m.id)}
-              title={m.blurb}
-              className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-                method === m.id ? 'text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
-              style={method === m.id ? { backgroundColor: BRAND } : undefined}
-            >
-              {m.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {rangeControl}
+          <div className="flex rounded-lg border border-slate-200 p-0.5">
+            {Object.values(RANK_METHODS).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onMethodChange(m.id)}
+                title={m.blurb}
+                className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                  method === m.id ? 'text-white' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                style={method === m.id ? { backgroundColor: BRAND } : undefined}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
       }
     >
+      {estimated && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <strong>Estimated series.</strong> Only today&apos;s reading is quoted by the exchange. The
+          history behind it is reconstructed from how the stock actually moved and where the
+          market-wide level sat — read its shape, not its individual days.
+        </p>
+      )}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricTile
           label={currentLabel}
@@ -114,7 +128,7 @@ export default function VolatilityEnvironmentChart({
           />
           <YAxis
             yAxisId="level"
-            stroke={isImplied ? BRAND : RV_COLOUR}
+            stroke={levelColour}
             tick={{ fontSize: 11 }}
             width={52}
             tickFormatter={(v) => `${v.toFixed(0)}${unitLabel}`}
@@ -130,7 +144,7 @@ export default function VolatilityEnvironmentChart({
             tickFormatter={(v) => `${v}`}
             label={{ value: 'Rank', angle: 90, position: 'insideRight', offset: 8, style: { fontSize: 11, fill: '#64748b' } }}
           />
-          <Tooltip content={<EnvTooltip unitLabel={unitLabel} currentLabel={currentLabel} method={method} />} />
+          <Tooltip content={<EnvTooltip unitLabel={unitLabel} currentLabel={currentLabel} method={method} colour={levelColour} />} />
 
           {/* The bands that make a rank readable at a glance. */}
           <ReferenceLine yAxisId="rank" y={75} stroke="#fca5a5" strokeDasharray="4 4" />
@@ -139,9 +153,10 @@ export default function VolatilityEnvironmentChart({
           <Area
             yAxisId="level"
             dataKey="level"
-            stroke={isImplied ? BRAND : RV_COLOUR}
+            stroke={levelColour}
             strokeWidth={2}
-            fill={isImplied ? BRAND : RV_COLOUR}
+            strokeDasharray={estimated ? '5 4' : undefined}
+            fill={levelColour}
             fillOpacity={0.1}
             isAnimationActive={false}
           />
@@ -159,8 +174,8 @@ export default function VolatilityEnvironmentChart({
 
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-600">
         <span className="flex items-center gap-2">
-          <span className="h-3 w-6 rounded-sm" style={{ backgroundColor: isImplied ? BRAND : RV_COLOUR, opacity: 0.35 }} />
-          {currentLabel} (left axis)
+          <span className="h-3 w-6 rounded-sm" style={{ backgroundColor: levelColour, opacity: 0.35 }} />
+          {currentLabel} (left axis){estimated ? ', estimated' : ''}
         </span>
         <span className="flex items-center gap-2">
           <svg width="22" height="8" aria-hidden="true">
@@ -191,14 +206,14 @@ export function RankMethodNote() {
   );
 }
 
-function EnvTooltip({ active, payload, label, unitLabel, currentLabel, method }) {
+function EnvTooltip({ active, payload, label, unitLabel, currentLabel, method, colour = BRAND }) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
     <ChartTooltip
       title={label}
       rows={[
-        { label: currentLabel, value: `${p.level.toFixed(1)}${unitLabel}`, color: BRAND },
+        { label: currentLabel, value: `${p.level.toFixed(1)}${unitLabel}`, color: colour },
         p.rank !== null && {
           label: `52-week ${method}`,
           value: p.rank.toFixed(0),

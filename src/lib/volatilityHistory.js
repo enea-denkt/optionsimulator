@@ -22,12 +22,47 @@
  * Getting real per-ticker IV rank needs either a licensed feed (ORATS,
  * marketdata.app, Polygon) or recording this app's own IV reading once a day
  * and accumulating a year of it.
+ *
+ * ## The two ways implied volatility does get charted here
+ *
+ * Since that note was written, a third source turned out to exist for a short
+ * list of names: Cboe publishes standalone *volatility indices* — VXAPL for
+ * Apple, VXN for the Nasdaq, GVZ for gold and so on — as daily series going
+ * back years, on the same public endpoint the price charts use. Those are real
+ * implied volatility and are ranked like any other series. See
+ * `VOLATILITY_INDICES` in src/api/marketData.js for the list.
+ *
+ * For every other ticker `impliedVolProxySeries` reconstructs an estimate,
+ * anchored so that its newest point equals the chain's actual at-the-money IV
+ * today. It is labelled as an estimate everywhere it is drawn.
  */
 
 const TRADING_DAYS = 252;
 
 /** One year of trading days — the standard lookback for both rank and percentile. */
 export const RANK_WINDOW = 252;
+
+/**
+ * Spans offered by the range selector on every time-series chart.
+ *
+ * This only controls how much of a series is *drawn*. Rank and percentile are
+ * always measured over `RANK_WINDOW`, because "52-week rank" is a defined term
+ * and would stop meaning it if the chart's zoom level changed the number.
+ */
+export const HISTORY_WINDOWS = [
+  { id: '3m', label: '3M', days: 63 },
+  { id: '6m', label: '6M', days: 126 },
+  { id: '1y', label: '1Y', days: 252 },
+  { id: '2y', label: '2Y', days: 504 },
+  { id: '5y', label: '5Y', days: 1260 },
+];
+
+export const DEFAULT_HISTORY_WINDOW = '1y';
+
+/** Trading days in a window id, falling back to one year. */
+export function windowDays(id) {
+  return (HISTORY_WINDOWS.find((w) => w.id === id) || HISTORY_WINDOWS[2]).days;
+}
 
 /**
  * The two ways practitioners rank a volatility reading. Both are shown because
@@ -149,6 +184,63 @@ export function rollingRankSeries(series, { window = RANK_WINDOW, method = 'rank
     const stats = rankAndPercentile(series.slice(i - window, i + 1), series[i].value, window + 1);
     if (stats) out.push({ date: series[i].date, value: method === 'percentile' ? stats.percentile : stats.rank });
   }
+  return out;
+}
+
+/**
+ * An estimated history of at-the-money implied volatility, for tickers with no
+ * volatility index of their own.
+ *
+ * The feed serves one IV reading — today's — so the shape of the series has to
+ * come from somewhere else. Two observable drivers explain most of what
+ * single-name implied volatility does:
+ *
+ *   1. **The stock's own realized volatility.** Implied tracks realized with a
+ *      premium on top, and that premium is far steadier than either series.
+ *   2. **The market-wide level (VIX).** Single-name premium is repriced in
+ *      sympathy with the index even when the stock itself is quiet.
+ *
+ * So each day is scaled by a blend of the two, relative to where they sit today,
+ * and multiplied by the chain's actual at-the-money IV. The newest point is
+ * therefore the real number; every earlier point is an inference about what the
+ * options would have cost then, not a record of what they did cost.
+ *
+ * What this is honestly good for: seeing whether today's premium is high or low
+ * for this name. What it is not: a substitute for recorded IV history.
+ */
+export function impliedVolProxySeries({
+  realizedSeries = [],
+  vixSeries = [],
+  atmIVPct,
+  realizedWeight = 0.6,
+} = {}) {
+  if (!(atmIVPct > 0) || realizedSeries.length < 30) return [];
+
+  const rvNow = realizedSeries[realizedSeries.length - 1].value;
+  if (!(rvNow > 0)) return [];
+
+  // VIX trades on the same session calendar but can be missing a day the stock
+  // has; carry the last known level forward rather than dropping the point.
+  const vixByDate = new Map(vixSeries.map((p) => [p.date, p.value]));
+  const vixNow = vixSeries.length ? vixSeries[vixSeries.length - 1].value : null;
+  const useVix = vixNow > 0 && vixSeries.length >= realizedSeries.length / 2;
+  const wRv = useVix ? Math.min(Math.max(realizedWeight, 0), 1) : 1;
+
+  const out = [];
+  let lastVix = null;
+  for (const point of realizedSeries) {
+    if (!(point.value > 0)) continue;
+    const vix = vixByDate.get(point.date) ?? lastVix;
+    if (vix > 0) lastVix = vix;
+
+    const rvLeg = point.value / rvNow;
+    const vixLeg = useVix && lastVix > 0 ? lastVix / vixNow : rvLeg;
+    out.push({ date: point.date, value: atmIVPct * (wRv * rvLeg + (1 - wRv) * vixLeg) });
+  }
+
+  // The anchor has to hold exactly, or the tile and the chart's last point
+  // disagree by a rounding wobble and the reader notices.
+  if (out.length) out[out.length - 1] = { date: out[out.length - 1].date, value: atmIVPct };
   return out;
 }
 

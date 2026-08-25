@@ -18,6 +18,11 @@ const PUT = '#FF2300';
 export default function VolatilitySmileChart({ data, spot, riskReversal, verdict, expirationLabel }) {
   const hasData = data.some((d) => d.otmIV !== null);
 
+  // A smile lives in a narrow band — 48% to 61%, say — and anchoring the axis at
+  // zero flattens it into a straight line. Fit the axis to the curve instead,
+  // with a little air above and below so the extremes are not clipped.
+  const { domain, decimals } = ivAxis(data);
+
   return (
     <InsightCard
       title="Volatility smile — what the market charges by strike"
@@ -44,8 +49,10 @@ export default function VolatilitySmileChart({ data, spot, riskReversal, verdict
               <YAxis
                 stroke="#64748b"
                 tick={{ fontSize: 11 }}
-                width={52}
-                tickFormatter={(v) => `${v.toFixed(0)}%`}
+                width={56}
+                domain={domain}
+                allowDecimals={decimals > 0}
+                tickFormatter={(v) => `${v.toFixed(decimals)}%`}
                 label={{ value: 'Implied volatility', angle: -90, position: 'insideLeft', offset: 4, style: { fontSize: 12, fill: '#64748b' } }}
               />
               <Tooltip content={<SmileTooltip spot={spot} />} />
@@ -88,6 +95,28 @@ export default function VolatilitySmileChart({ data, spot, riskReversal, verdict
       )}
     </InsightCard>
   );
+}
+
+/**
+ * Y-axis bounds for the smile: the range the curves actually occupy, padded by
+ * a tenth of their spread, and never taken below zero. Ticks gain a decimal
+ * when the band is tight enough that whole percent labels would repeat.
+ */
+function ivAxis(data) {
+  const values = data
+    .flatMap((d) => [d.otmIV, d.callIV, d.putIV])
+    .filter((v) => Number.isFinite(v));
+
+  if (!values.length) return { domain: ['auto', 'auto'], decimals: 0 };
+
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const pad = Math.max((high - low) * 0.1, 0.25);
+
+  return {
+    domain: [Math.max(0, low - pad), high + pad],
+    decimals: high - low < 6 ? 1 : 0,
+  };
 }
 
 function Legend({ colour, width = 1.5, children }) {

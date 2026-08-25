@@ -12,9 +12,13 @@ import TermStructureChart from '@/components/insights/TermStructureChart';
 import OpenInterestChart from '@/components/insights/OpenInterestChart';
 import MaxPainChart from '@/components/insights/MaxPainChart';
 import VolatilityEnvironmentChart, { RankMethodNote } from '@/components/insights/VolatilityEnvironmentChart';
-import { fetchOptionChain, fetchPriceHistory, formatExpiration } from '@/api/marketData';
+import RangeToggle from '@/components/insights/RangeToggle';
 import {
-  realizedVolSeries, volIndexSeries, rankAndPercentile, rollingRankSeries, trimForChart, RANK_WINDOW,
+  fetchOptionChain, fetchPriceHistory, fetchVolatilityIndexHistory, formatExpiration,
+} from '@/api/marketData';
+import {
+  realizedVolSeries, volIndexSeries, impliedVolProxySeries, rankAndPercentile, rollingRankSeries,
+  trimForChart, HISTORY_WINDOWS, DEFAULT_HISTORY_WINDOW, windowDays, RANK_WINDOW,
 } from '@/lib/volatilityHistory';
 import { useUrlState, asString, asBoolean, asEnum } from '@/lib/useUrlState';
 import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
@@ -23,14 +27,6 @@ import {
   putCallRatio, maxPain, realizedVol, expectedMove, volatilityVerdict, termVerdict, skewVerdict,
   CONFIDENCE_LEVELS,
 } from '@/lib/optionAnalytics';
-
-const HISTORY_WINDOWS = [
-  { id: '3m', label: '3M', days: 63 },
-  { id: '6m', label: '6M', days: 126 },
-  { id: '1y', label: '1Y', days: 252 },
-  { id: '2y', label: '2Y', days: 504 },
-  { id: '5y', label: '5Y', days: 1260 },
-];
 
 // No ticker is preselected: the page opens asking which company to look at,
 // rather than showing one nobody chose.
@@ -42,7 +38,7 @@ const URL_SPEC = {
   ticker: asString(DEFAULT_TICKER),
   expiration: { ...asString(''), param: 'exp' },
   confidence: { ...asEnum(CONFIDENCE_LEVELS.map((l) => l.id), '68'), param: 'ci' },
-  historyWindow: { ...asEnum(HISTORY_WINDOWS.map((w) => w.id), '6m'), param: 'window' },
+  historyWindow: { ...asEnum(HISTORY_WINDOWS.map((w) => w.id), DEFAULT_HISTORY_WINDOW), param: 'window' },
   showRealizedCone: { ...asBoolean(false), param: 'rv' },
   oiMetric: { ...asEnum(['oi', 'volume'], 'oi'), param: 'oi' },
   rankMethod: { ...asEnum(['rank', 'percentile'], 'rank'), param: 'rank' },
@@ -52,7 +48,7 @@ const URL_DEFAULTS = {
   ticker: DEFAULT_TICKER,
   expiration: '',
   confidence: '68',
-  historyWindow: '6m',
+  historyWindow: DEFAULT_HISTORY_WINDOW,
   showRealizedCone: false,
   oiMetric: 'oi',
   rankMethod: 'rank',
@@ -69,6 +65,8 @@ export default function ChainInsights() {
   const [chain, setChain] = useState(null);
   const [history, setHistory] = useState([]);
   const [vixHistory, setVixHistory] = useState([]);
+  // The ticker's own Cboe volatility index, when one exists (VXAPL, VXN, GVZ…).
+  const [ivIndex, setIvIndex] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -81,16 +79,20 @@ export default function ChainInsights() {
     try {
       // The chain is required; history only powers the price chart and realized
       // volatility, so a failure there degrades the page instead of emptying it.
-      const [nextChain, nextHistory, nextVix] = await Promise.all([
+      const [nextChain, nextHistory, nextVix, nextIvIndex] = await Promise.all([
         fetchOptionChain(symbol, { force }),
         fetchPriceHistory(symbol, { force }).catch(() => []),
         // VIX is the market-wide implied reading; it is shared across tickers
         // and cached, so this costs nothing after the first load.
         fetchPriceHistory('VIX', { force }).catch(() => []),
+        // Real implied-volatility history, for the handful of names Cboe
+        // publishes an index for. Resolves to null for everything else.
+        fetchVolatilityIndexHistory(symbol, { force }),
       ]);
       setChain(nextChain);
       setHistory(nextHistory);
       setVixHistory(nextVix);
+      setIvIndex(nextIvIndex);
 
       const expirations = listExpirations(nextChain);
       const requested = keepExpiration && expirations.some((e) => e.expiration === keepExpiration)
@@ -104,6 +106,7 @@ export default function ChainInsights() {
       console.error('Error loading chain insights:', err);
       setChain(null);
       setHistory([]);
+      setIvIndex(null);
       setError(err.message || 'Could not load market data');
     } finally {
       setLoading(false);
@@ -163,26 +166,42 @@ export default function ChainInsights() {
   // Volatility environment: the ticker's own realized volatility, and VIX as the
   // market-wide implied reading. Kept separate on purpose — see the note in
   // src/lib/volatilityHistory.js on why per-ticker IV cannot be ranked here.
+  const shownDays = windowDays(historyWindow);
+  const shownYears = shownDays / 252;
+
   const environment = useMemo(() => {
+    // The range selector changes what is drawn and nothing else: rank and
+    // percentile stay measured over 52 weeks, because that is what the terms
+    // mean and a zoom control has no business redefining them.
     const build = (series) => {
       if (series.length < RANK_WINDOW / 2) return null;
       const stats = rankAndPercentile(series, series[series.length - 1].value);
       if (!stats) return null;
       return {
         stats,
-        series: trimForChart(series, 2),
-        rankSeries: trimForChart(rollingRankSeries(series, { method: rankMethod }), 2),
+        series: trimForChart(series, shownYears),
+        rankSeries: trimForChart(rollingRankSeries(series, { method: rankMethod }), shownYears),
       };
     };
 
-    return {
-      realized: build(realizedVolSeries(history, 30)),
-      vix: build(volIndexSeries(vixHistory)),
-    };
-  }, [history, vixHistory, rankMethod]);
+    const realized = realizedVolSeries(history, 30);
+    const vix = volIndexSeries(vixHistory);
 
-  const windowDays = HISTORY_WINDOWS.find((w) => w.id === historyWindow)?.days || 126;
-  const visibleHistory = useMemo(() => history.slice(-windowDays), [history, windowDays]);
+    // Real implied volatility wherever Cboe publishes an index for the name;
+    // otherwise a series anchored on the chain's own at-the-money IV today.
+    // Both are ranked identically, and the estimated one says it is estimated.
+    const implied = ivIndex
+      ? volIndexSeries(ivIndex.history)
+      : impliedVolProxySeries({ realizedSeries: realized, vixSeries: vix, atmIVPct: analytics?.ivPct });
+
+    return { implied: build(implied), realized: build(realized), vix: build(vix) };
+  }, [history, vixHistory, ivIndex, analytics?.ivPct, rankMethod, shownYears]);
+
+  const visibleHistory = useMemo(() => history.slice(-shownDays), [history, shownDays]);
+
+  const rangeControl = (
+    <RangeToggle value={historyWindow} onChange={(value) => set({ historyWindow: value })} />
+  );
 
   const expirationLabel = expiration ? formatExpiration(expiration) : 'this expiration';
 
@@ -322,10 +341,44 @@ export default function ChainInsights() {
           )}
 
           {/* Is this a high-premium environment, historically? */}
-          {(environment.realized || environment.vix) && (
+          {(environment.implied || environment.realized || environment.vix) && (
             <div className="space-y-4">
               <RankMethodNote />
               <div className="grid gap-6 xl:grid-cols-2">
+                {environment.implied && (
+                  <VolatilityEnvironmentChart
+                    symbol={ticker}
+                    series={environment.implied.series}
+                    rankSeries={environment.implied.rankSeries}
+                    stats={environment.implied.stats}
+                    method={rankMethod}
+                    onMethodChange={(v) => set({ rankMethod: v })}
+                    rangeControl={rangeControl}
+                    title={
+                      ivIndex
+                        ? `${ticker} option premium versus its own past — ${ivIndex.name}`
+                        : `${ticker} option premium versus its own past`
+                    }
+                    subtitle={
+                      ivIndex
+                        ? `Cboe's ${ivIndex.name} index: 30-day implied volatility of ${ivIndex.of}, with its rolling 52-week ranking.`
+                        : 'At-the-money implied volatility, with its rolling 52-week ranking. Today is quoted; the history is estimated.'
+                    }
+                    unitLabel="%"
+                    currentLabel="Implied volatility"
+                    isImplied
+                    estimated={!ivIndex}
+                    footnote={
+                      ivIndex
+                        ? `${ivIndex.name} is computed the way VIX is, but on ${ivIndex.of} rather than the S&P 500, so this is a true implied-volatility ranking for this name — what its options have actually cost, day by day, rather than how far the stock moved.`
+                        : 'The exchange publishes only today\u2019s implied volatility for this ticker, so the earlier points are ' +
+                          'inferred: each day is today\u2019s at-the-money IV scaled by how the stock\u2019s own realized ' +
+                          'volatility and the market-wide VIX level sat then against where they sit now. The newest point is ' +
+                          'the real quote. Treat the rank as a reasonable reading of whether premium is rich, not as a record ' +
+                          'of past prices \u2014 that needs a licensed feed.'
+                    }
+                  />
+                )}
                 {environment.realized && (
                   <VolatilityEnvironmentChart
                     symbol={ticker}
@@ -334,15 +387,16 @@ export default function ChainInsights() {
                     stats={environment.realized.stats}
                     method={rankMethod}
                     onMethodChange={(v) => set({ rankMethod: v })}
+                    rangeControl={rangeControl}
                     title={`${ticker} volatility versus its own past`}
-                    subtitle="30-day realized volatility over two years, with its rolling 52-week ranking."
+                    subtitle="30-day realized volatility, with its rolling 52-week ranking."
                     unitLabel="%"
                     currentLabel="Realized volatility"
                     footnote={
-                      'This ranks how much the stock has actually moved, not how its options are priced. ' +
-                      'Ranking implied volatility per ticker needs a year of daily IV readings, which this ' +
-                      'data source does not publish — it serves only today\u2019s. The VIX panel alongside is a ' +
-                      'true implied reading, and the market-wide answer to whether premium is rich right now.'
+                      'This ranks how much the stock has actually moved, not what its options cost — the ' +
+                      'implied-volatility panel above is the one that answers that. Read together they are the ' +
+                      'volatility risk premium over time: implied sitting above realized is what option sellers ' +
+                      'are paid for, and the gap between the two ranks is where that pay is unusual.'
                     }
                   />
                 )}
@@ -354,8 +408,9 @@ export default function ChainInsights() {
                     stats={environment.vix.stats}
                     method={rankMethod}
                     onMethodChange={(v) => set({ rankMethod: v })}
+                    rangeControl={rangeControl}
                     title="Market-wide premium environment"
-                    subtitle="VIX over two years, with its rolling 52-week ranking. This is implied volatility, not realized."
+                    subtitle="VIX with its rolling 52-week ranking. This is implied volatility, not realized."
                     unitLabel=""
                     currentLabel="VIX"
                     isImplied
@@ -373,27 +428,8 @@ export default function ChainInsights() {
           {/* Price and forecast */}
           {visibleHistory.length > 5 && analytics.ivPct ? (
             <div>
-              <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
-                <span className="mr-auto text-xs font-medium uppercase tracking-wide text-slate-500">
-                  History shown
-                </span>
-                <div className="flex rounded-lg border border-slate-200 p-0.5">
-                  {HISTORY_WINDOWS.map((w) => (
-                    <button
-                      key={w.id}
-                      type="button"
-                      onClick={() => set({ historyWindow: w.id })}
-                      className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-                        historyWindow === w.id ? 'text-white' : 'text-slate-600 hover:bg-slate-100'
-                      }`}
-                      style={historyWindow === w.id ? { backgroundColor: '#2188e6' } : undefined}
-                    >
-                      {w.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
               <PriceForecastChart
+                rangeControl={rangeControl}
                 history={visibleHistory}
                 spot={spot}
                 ivPct={analytics.ivPct}

@@ -28,6 +28,7 @@ export default function PriceForecastChart({
   onConfidenceChange,
   showRealizedCone,
   onToggleRealizedCone,
+  rangeControl,
 }) {
   const level = CONFIDENCE_LEVELS.find((l) => l.id === confidence) || CONFIDENCE_LEVELS[0];
 
@@ -88,7 +89,8 @@ export default function PriceForecastChart({
         'The upper edge sits further away in dollars than the lower one, which is what compounding returns look like.'
       }
       action={
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {rangeControl}
           <div className="flex rounded-lg border border-slate-200 p-0.5">
             {CONFIDENCE_LEVELS.map((l) => (
               <button

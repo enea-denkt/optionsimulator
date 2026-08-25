@@ -214,11 +214,29 @@ What *does* have history is the volatility **indices**, and they are keyless:
 | `_VIX9D` / `_VIX3M` / `_VVIX` | 3,900–5,100 | 2006–2011 |
 | `_VXAPL`, `_VXAZN` | 3,919 | 2011 — only a handful of single names |
 
-So the page ships two honest substitutes instead of a mislabelled one: the
-ticker's **realized** volatility rank from its own closes, and **VIX** as the
-market-wide **implied** rank. Real per-ticker IV rank needs a licensed feed
-(ORATS, marketdata.app, Polygon) or recording this app's own IV reading daily
-until a year accumulates.
+That handful is worth more than it first looked. Checked again on 2026-08-25,
+all of `_VXAPL _VXAZN _VXGOG _VXIBM _VXGS _VXEEM _VXEWZ _VXFXI _VXGDX _VXSLV
+_VXTLT _GVZ _OVX _VXN _RVX _VXD` are still published and still current (last bar
+the previous session); `_VXXLE` died in 2022 and `_EVZ` in 2025. Each is a real
+30-day implied-volatility series for its underlying, so for those ~20 tickers the
+insights page ranks **actual implied volatility**, not a stand-in. The map lives
+in `VOLATILITY_INDICES` in `src/api/marketData.js`, and the deployed worker
+already allows the path — no `ALLOWED_PATHS` change was needed.
+
+For every other ticker the page draws an **estimated** IV history
+(`impliedVolProxySeries`): today's at-the-money IV from the chain, scaled back
+through time by a 60/40 blend of the stock's own realized volatility and VIX,
+each measured against where it sits today. The newest point is forced to equal
+the real quote exactly, so the chart's last value and the metric tile cannot
+disagree. It is drawn dashed, under an amber "estimated series" banner, and its
+rank is worth reading precisely because it lands somewhere neither of its inputs
+does — MSTR on 2026-08-25: estimated IV rank 23, realized rank 35.
+
+Alongside it the page still ships the two honest substitutes: the ticker's
+**realized** volatility rank from its own closes, and **VIX** as the market-wide
+**implied** rank. A *recorded* per-ticker IV history still needs a licensed feed
+(ORATS, marketdata.app, Polygon) or saving this app's own IV reading daily until
+a year accumulates.
 
 **Rank and percentile are different, and the difference matters.** Rank is
 `(now − low) / (high − low)`, so one spike a year ago holds every later reading
