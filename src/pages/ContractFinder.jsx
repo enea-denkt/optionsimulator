@@ -128,8 +128,8 @@ export default function ContractFinder() {
 
   const ranked = screen.rows;
   const funnel = useMemo(
-    () => funnelNote(screen.counts, { chain, side, minOpenInterest }),
-    [screen.counts, chain, side, minOpenInterest],
+    () => funnelNote(screen.counts, { chain, minOpenInterest }),
+    [screen.counts, chain, minOpenInterest],
   );
 
   // Collapsing to one row per expiry happens after ranking, so the "contracts

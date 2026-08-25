@@ -351,7 +351,7 @@ export function screenContracts(chain, {
  * One sentence saying where the candidates went, or null when nothing needs
  * saying because nothing was dropped.
  */
-export function funnelNote(counts, { chain, side, minOpenInterest } = {}) {
+export function funnelNote(counts, { chain, minOpenInterest } = {}) {
   if (!counts || !counts.inWindow) return null;
 
   const parts = [];
