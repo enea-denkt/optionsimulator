@@ -168,10 +168,31 @@ the live site still serves the previous bundle.
 curl -s -D - -o /dev/null https://enea-denkt.github.io/optionsimulator/ | grep -i last-modified
 ```
 
+**Check <https://www.githubstatus.com/api/v2/summary.json> before retrying.** It
+answers in one request whether this is yours to fix, and the answer is often no —
+Pages publishing runs on Actions, so an Actions incident stops deploys dead while
+`gh-pages` sits there looking perfect.
+
+```bash
+curl -s https://www.githubstatus.com/api/v2/summary.json \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['status']['description']); \
+    [print(c['name'], '->', c['status']) for c in d['components'] if c['name'] in ('Pages','Actions')]"
+```
+
 Seen on 2026-08-17: GitHub's own `pages build and deployment` workflow failed
 three times because it could not download `actions/deploy-pages` from
 codeload.github.com — `429 Too Many Requests`, then an internal server error.
 Nothing was wrong with the artifact.
+
+Seen again on 2026-08-26, and this one is the reason the status check is now the
+first step: a deploy pushed at 15:10 UTC never published. `gh-pages` held the
+right tree, `.nojekyll` and `404.html` were present, `index.html` named the new
+bundle, and the bundle 404'd on the live site with `age: 0`, ruling out CDN
+caching. Three empty-commit retries over thirty minutes did nothing. GitHub had
+opened an incident at 15:11 UTC — Actions in major outage, Pages degraded, a
+database primary failing over. **Retrying cannot fix a platform outage; it just
+adds commits.** One request to the status API would have said so in the first
+minute.
 
 The fix is to run it again: any push to `gh-pages` (an empty commit is enough) or
 "Re-run all jobs" in the Actions tab. It cleared about fifteen minutes later.
