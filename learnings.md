@@ -365,39 +365,68 @@ were exactly that — including two in the top twenty.
 
 ## 11c. Saying whether a premium is rich, without arguing in a circle
 
-The simulator's premium-band chart draws the contract's value on every day
-between now and expiry, banded by where the underlying could be. Getting it to
-also answer "is this expensive?" turned on one thing.
-
 **A model cannot tell you the market is wrong when the market told it what to
 think.** Implied volatility is extracted from the premium: price a contract at
 its own IV and the binomial tree hands back the price it started from, to the
 cent, every single time. A rich/cheap verdict built on that comparison is
 worthless, and it will look convincing while being worthless, which is worse.
 
-The reference that does work is **realized** volatility — how far the stock has
-actually moved over the last 30 trading days. Pricing the same contract at that
-number says what the premium would be worth if the stock simply carried on as it
-has. The gap between the two lines is the volatility risk premium in dollars
-rather than vol points, and it is the honest form of the question. MSTR's 52-day
-$125 call on 2026-08-25: $15.58 paid against $13.17 at realized volatility, 75%
-implied against 70% realized — 1.18×, ordinary. A positive gap is the *normal*
-state, since sellers charge for bearing risk, so the thresholds sit at 1.35 and
-0.85 rather than at 1.
+Everything on the simulator's richness charts is measured against a **benchmark
+volatility** instead, defaulting to the stock's realized volatility over the last
+30 trading days — an independent measurement of how much it has actually been
+moving — and exposed as a slider, because "what if I think vol is really 60%?"
+is the question a trader actually has. A positive gap is the *normal* state,
+since sellers charge for bearing risk, so the thresholds sit at 1.35 and 0.85
+rather than at 1.
 
-Two smaller things the chart forced:
+**The cell value is a dollar gap, not a ratio.** A ratio is unbounded where both
+numbers are pennies: a two-cent contract worth one cent at the benchmark reads
+as 100% rich and paints the entire out-of-the-money corner scarlet over a penny.
+The dollar gap peaks near the money and near the front, which is where the money
+is, and falls to zero at expiry where only intrinsic value is left and the two
+volatilities agree by definition.
 
-* **The cone's width and the pricing inside it are different assumptions.** The
-  band's width comes from today's implied volatility, because that is the
-  market's own statement about how far the stock can travel; the pricing inside
-  it follows the user's IV view. Letting one input do both would mean an IV view
-  silently changed the odds of the move as well as the price of it.
-* **A call's two-sigma upside makes the chart unreadable.** On a 75%-volatility
-  name the outer band reaches six times the premium by expiry and flattens every
-  line into the bottom fifth. The axis fits the inner band by default and the
-  outer one clips, with a toggle for the full range. Puts do not have the problem
-  — their upside is capped by the strike — and the toggle visibly does nothing on
-  one, which is the correct behaviour rather than a bug.
+### Why this is three 2D charts and not one 3D one
+
+The request was a 3D tunnel — price, time, premium, with layers for volatility.
+It is worth writing down why that was argued out of rather than built.
+
+* **`V(S, t)` is a surface, not a tunnel.** One premium per price/time pair. A
+  tunnel only appears once volatility is a fourth axis, so the picture is 4D
+  being drawn in 3D and the layers occlude each other.
+* **The question is a 1D comparison over a 2D domain.** "Is this expensive" is
+  one number — paid against benchmark — asked at every price and date. That is
+  colour on a grid.
+* **The surface was already on the page.** The Option Value Heatmap in
+  `EvolutionChart` is exactly that price x time grid. A 3D render would have been
+  the same data rotated into a form where occlusion and perspective make "is my
+  point above or below the surface" — the literal question — unreliable by eye.
+
+What replaced it: the same grid coloured by *overpay* rather than by value, with
+the scenario's path ringed through it; the textbook family of value-vs-price
+curves drawn twice, at implied and at the benchmark, so the space between them is
+the premium as a shape; and a histogram of every 30-day volatility the stock has
+delivered with a line at what is being paid, which turns the whole question into
+a percentile a person can act on.
+
+### Two bugs that only show in a difference
+
+**Binomial trees have a sawtooth, and subtracting two of them exposes it.** A
+tree of fixed depth prices a step function of spot — its terminal nodes sit on
+discrete prices, and whether the strike lands on a node or between two shifts the
+answer slightly. Invisible in a price. Very visible in a gap a tenth its size:
+the overpay curves came out looking like staircases. Deepening the tree barely
+helps and costs enormously — 300 steps took 1.6 seconds and was still rougher
+than the fix. Averaging depths `n` and `n+1` puts the two halves of the
+oscillation against each other and cut the roughness threefold for twice the
+work, at 72ms for the whole chart.
+
+**`toISOString` is the wrong way to get a calendar date.** It converts to UTC
+first, so local midnight anywhere ahead of UTC lands on the previous day. In CEST
+the grid's entire date axis was labelled one day early, today's column reading as
+yesterday. `optionAnalytics` already had `toLocalISODate` for this reason; the
+new module had to grow its own. Build the string from `getFullYear`/`getMonth`/
+`getDate` and never from `toISOString`.
 
 ## 11d. A chart and the table beside it must agree to the decimal
 

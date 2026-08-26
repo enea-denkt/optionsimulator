@@ -46,7 +46,7 @@ Shared building blocks, all pure and node-testable:
 | `src/lib/optionComparison.js` | cross-name contract matching and the comparison metrics |
 | `src/lib/gammaExposure.js` | Black-Scholes gamma and vanna, dealer exposure, gamma flip |
 | `src/lib/contractScreener.js` | the binomial pricer, chain-wide scenario ranking, return curves |
-| `src/lib/premiumBands.js` | the premium's path and dispersion over time, and the rich/cheap reading |
+| `src/lib/premiumRichness.js` | overpay against a benchmark volatility, by price and date; decay curves; the realized-vol distribution |
 | `src/lib/chartScale.js` | axis bounds and ticks that read like numbers a person would pick |
 | `src/lib/useUrlState.js` | query-string state, shared by every page |
 | `src/lib/tickerMemory.js` | the ticker carried between pages for the session |
@@ -60,8 +60,16 @@ Shared **components** worth reaching for before writing a new one:
 | `insights/RangeToggle.jsx` | the 3M/6M/1Y/2Y/5Y span selector; drop it in any chart's `action` slot and share one URL value across the page |
 | `screener/ResultsTable.jsx` | ranked contract table; `compact` drops secondary columns onto the row's hover title so two fit side by side, `startRank`/`descending` number a slice from either end |
 | `screener/ReturnCurveChart.jsx` | return against underlying move, with the Tableau 20 palette exported as `TABLEAU_20` |
-| `simulator/PremiumBandsChart.jsx` | premium over time with dispersion bands and the rich/cheap verdict |
+| `simulator/RichnessMap.jsx` | price x date grid coloured by overpay, with the scenario's path ringed through it |
+| `simulator/DecayCurves.jsx` | premium against price at several times to expiry, at implied and at the benchmark, with an overpay mode |
+| `simulator/VolDistribution.jsx` | histogram of delivered volatility with the implied marked |
 | `ui/slider.jsx` | shadcn slider, **now one thumb per value** — pass two and it is a range slider |
+
+`colorScale.js` carries both ramps: `viridisCss` for magnitude with no natural
+centre (the exposure heatmap) and `divergingCss(value, extent)` for a signed
+quantity where zero means something (overpay). The diverging extent is symmetric
+on purpose — scaling each side to its own maximum makes a two-cent discount look
+as blue as a two-dollar overpay looks red.
 
 `chartScale.js`'s `niceAxis(low, high, { floorAt })` is the answer whenever an
 axis prints numbers like `−89,947%`: pick the step, place ticks on multiples of

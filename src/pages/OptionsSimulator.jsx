@@ -3,16 +3,21 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import OptionsFilters from '../components/simulator/OptionsFilters';
 import EvolutionChart from '../components/simulator/EvolutionChart';
-import PremiumBandsChart from '../components/simulator/PremiumBandsChart';
+import RichnessMap from '../components/simulator/RichnessMap';
+import DecayCurves from '../components/simulator/DecayCurves';
+import VolDistribution from '../components/simulator/VolDistribution';
 import MetricsSummary from '../components/simulator/MetricsSummary';
 import { Activity, TrendingUp } from 'lucide-react';
 import { useUrlState, asString, asNumber, asNullableNumber, asEnum } from '@/lib/useUrlState';
 // One binomial tree serves this page and the contract finder, so a contract
 // cannot be worth one number here and another there.
 import { americanOptionPrice as calculateAmericanOptionPrice } from '@/lib/contractScreener';
-import { premiumBands } from '@/lib/premiumBands';
+import {
+  richnessGrid, decayCurves, volDistribution, premiumVerdict,
+} from '@/lib/premiumRichness';
 import { fetchPriceHistory } from '@/api/marketData';
 import { realizedVol } from '@/lib/optionAnalytics';
+import { americanOptionPrice } from '@/lib/contractScreener';
 import { getLastTicker, setLastTicker } from '@/lib/tickerMemory';
 
 function payoffAtExpiration(spot, strike, optionType = 'call') {
@@ -114,6 +119,7 @@ const DEFAULT_FILTERS = {
   currentIV: 30,
   expectedIVChange: 0,
   riskFreeRate: 4,
+  benchmarkVol: null,
   premiumPaid: 0,
   entryPremium: null,
   simulationMode: 'ticker'
@@ -146,6 +152,8 @@ const URL_SPEC = {
   expectedPriceChange: { ...asNumber(5), param: 'move' },
   expectedIVChange: { ...asNumber(0), param: 'ivmove' },
   riskFreeRate: { ...asNumber(4), param: 'rate' },
+  // Null means "follow the stock's realized volatility"; a number pins it.
+  benchmarkVol: { ...asNullableNumber(null), param: 'bench' },
   scenario: { ...asEnum(['bullish', 'neutral', 'bearish'], 'neutral'), param: 'scenario' },
 };
 
@@ -161,41 +169,68 @@ export default function OptionsSimulator() {
 
   const [simulationData, setSimulationData] = useState({ data: [], initialValue: 0 });
 
-  // The stock's own realized volatility, which is what makes "rich or cheap"
-  // answerable. Its history is cached in marketData, so switching contracts on
-  // one ticker costs nothing. Freeform mode has no ticker and simply goes
-  // without: the bands still draw, the fair-value line does not.
-  const [realizedVolPct, setRealizedVolPct] = useState(null);
+  // The stock's daily closes, which are what make "rich or cheap" answerable:
+  // realized volatility is the only reference independent of the premium being
+  // judged. Cached in marketData, so switching contracts on one ticker is free.
+  // Freeform mode has no ticker and falls back to a benchmark the user sets.
+  const [history, setHistory] = useState([]);
 
   useEffect(() => {
     let active = true;
     if (!filters.ticker) {
-      setRealizedVolPct(null);
+      setHistory([]);
       return () => { active = false; };
     }
     fetchPriceHistory(filters.ticker)
-      .then((history) => { if (active) setRealizedVolPct(realizedVol(history, 30)); })
-      .catch(() => { if (active) setRealizedVolPct(null); });
+      .then((bars) => { if (active) setHistory(bars); })
+      .catch(() => { if (active) setHistory([]); });
     return () => { active = false; };
   }, [filters.ticker]);
 
-  const bands = useMemo(() => {
-    if (!(filters.selectedContract || filters.simulationMode === 'free')) {
-      return { rows: [], fair: null, verdict: null };
-    }
-    return premiumBands({
+  const realizedVolPct = useMemo(() => realizedVol(history, 30), [history]);
+
+  // Pinned by the slider, or the stock's own realized volatility, or — with no
+  // history at all — implied itself, which makes every gap zero and says so
+  // rather than inventing a reference.
+  const benchmarkVolPct = filters.benchmarkVol ?? realizedVolPct ?? filters.currentIV;
+
+  const ready = filters.selectedContract || filters.simulationMode === 'free';
+
+  const model = useMemo(() => {
+    if (!ready) return { grid: null, curves: null, dist: null, verdict: null };
+
+    const shared = {
       spot: filters.currentPrice,
       strike: filters.strikePrice,
       dte: filters.daysToExpiration,
       ivPct: filters.currentIV,
+      benchmarkVolPct,
       optionType: filters.optionType,
       rate: filters.riskFreeRate,
       priceChangePct: filters.expectedPriceChange,
       ivChangePct: filters.expectedIVChange,
-      realizedVolPct,
-      marketPremium: filters.premiumPaid,
-    });
-  }, [filters, realizedVolPct]);
+    };
+
+    const dist = volDistribution(history, { ivPct: filters.currentIV });
+    const benchmarkValue = americanOptionPrice(
+      filters.currentPrice, filters.strikePrice, filters.daysToExpiration,
+      benchmarkVolPct, filters.riskFreeRate, filters.optionType,
+    );
+
+    return {
+      grid: richnessGrid(shared),
+      curves: decayCurves(shared),
+      dist,
+      verdict: premiumVerdict({
+        marketPremium: filters.premiumPaid,
+        benchmarkValue,
+        ivPct: filters.currentIV,
+        benchmarkVolPct,
+        optionType: filters.optionType,
+        aboveShare: dist ? dist.aboveShare : null,
+      }),
+    };
+  }, [filters, benchmarkVolPct, history, ready]);
 
   useEffect(() => {
     let active = true;
@@ -512,15 +547,32 @@ export default function OptionsSimulator() {
 
                 </div>
 
-                <PremiumBandsChart
-                  rows={bands.rows}
-                  verdict={bands.verdict}
-                  fair={bands.fair}
-                  marketPremium={filters.premiumPaid}
-                  ivPct={filters.currentIV}
+                <RichnessMap
+                  grid={model.grid}
+                  verdict={model.verdict}
+                  benchmarkVolPct={benchmarkVolPct}
                   realizedVolPct={realizedVolPct}
-                  priceChangePct={filters.expectedPriceChange}
-                  ivChangePct={filters.expectedIVChange}
+                  ivPct={filters.currentIV}
+                  optionType={filters.optionType}
+                  ticker={filters.ticker}
+                  onBenchmarkChange={(v) => setFilters({ ...filters, benchmarkVol: v })}
+                />
+
+                <DecayCurves
+                  rows={model.curves?.rows}
+                  series={model.curves?.series}
+                  spot={filters.currentPrice}
+                  strike={filters.strikePrice}
+                  targetPrice={filters.currentPrice * (1 + filters.expectedPriceChange / 100)}
+                  marketPremium={filters.premiumPaid}
+                  benchmarkVolPct={benchmarkVolPct}
+                  ivPct={filters.currentIV}
+                  optionType={filters.optionType}
+                />
+
+                <VolDistribution
+                  dist={model.dist}
+                  ivPct={filters.currentIV}
                   ticker={filters.ticker}
                 />
 

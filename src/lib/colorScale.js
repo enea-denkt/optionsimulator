@@ -83,3 +83,49 @@ export function formatK(value) {
   const abs = Math.abs(k);
   return `${sign}$${abs.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}K`;
 }
+
+/**
+ * A diverging ramp for quantities with a meaningful zero — how much a premium
+ * is above or below fair value, where the sign is the whole point and the
+ * middle must be visibly neutral.
+ *
+ * Deliberately not viridis: that ramp is built to shout about magnitude and has
+ * no natural centre, which is right for exposure and wrong here. Blue-white-red
+ * puts fair value at white, so the eye finds the boundary between overpaying
+ * and underpaying without reading a legend.
+ */
+const DIVERGING = [
+  [33, 102, 172],   // #2166AC deep blue — cheapest
+  [103, 169, 207],  // #67A9CF
+  [209, 229, 240],  // #D1E5F0
+  [247, 247, 247],  // #F7F7F7 neutral — fair value sits here
+  [253, 219, 199],  // #FDDBC7
+  [239, 138, 98],   // #EF8A62
+  [178, 24, 43],    // #B2182B deep red — dearest
+];
+
+/**
+ * `value` on a scale centred at zero and reaching `extent` either side.
+ *
+ * The extent is symmetric on purpose. Scaling each side to its own maximum
+ * would make a two-cent discount look as blue as a two-dollar overpay looks
+ * red, which is the one thing this ramp exists to prevent.
+ */
+export function divergingCss(value, extent) {
+  if (!Number.isFinite(value) || !(extent > 0)) return 'rgb(247, 247, 247)';
+
+  const t = Math.max(0, Math.min(1, (value / extent + 1) / 2));
+  const scaled = t * (DIVERGING.length - 1);
+  const i = Math.min(DIVERGING.length - 2, Math.floor(scaled));
+  const f = scaled - i;
+
+  const a = DIVERGING[i];
+  const b = DIVERGING[i + 1];
+  return `rgb(${Math.round(a[0] + (b[0] - a[0]) * f)}, ${Math.round(a[1] + (b[1] - a[1]) * f)}, ${Math.round(a[2] + (b[2] - a[2]) * f)})`;
+}
+
+/** Readable text on the diverging ramp: only its two ends are dark. */
+export function textOnDiverging(value, extent) {
+  if (!Number.isFinite(value) || !(extent > 0)) return '#0f172a';
+  return Math.abs(value) > extent * 0.66 ? '#ffffff' : '#0f172a';
+}
