@@ -28,11 +28,13 @@ the menu is the `NAV_ITEMS` array in `src/pages/Layout.jsx`.
 
 | Route | Page | What it answers |
 | --- | --- | --- |
-| `/` | Options Simulator | How does this position behave under a scenario? |
+| `/` | Options Simulator | How does this position behave under a scenario, and is the premium rich or cheap? |
 | `/insights` | Chain Insights | What is the chain pricing for one name? |
+| `/finder` | Contract Finder | Which contract pays best if my view comes true? |
 | `/compare` | Compare Companies | Which of these names has the expensive options? |
 | `/exposure` | Dealer Exposure | Where do hedging flows pin or accelerate price? |
-| `/finder` | Contract Finder | Which contract pays best if my view comes true? |
+
+The table is in menu order — `NAV_ITEMS` puts the finder third.
 
 Shared building blocks, all pure and node-testable:
 
@@ -48,6 +50,23 @@ Shared building blocks, all pure and node-testable:
 | `src/lib/chartScale.js` | axis bounds and ticks that read like numbers a person would pick |
 | `src/lib/useUrlState.js` | query-string state, shared by every page |
 | `src/lib/tickerMemory.js` | the ticker carried between pages for the session |
+
+Shared **components** worth reaching for before writing a new one:
+
+| Component | What it is, and where it is already used |
+| --- | --- |
+| `insights/InsightCard.jsx` | the frame every chart sits in: title, computed verdict sentence, action slot, footnote |
+| `insights/MetricTile.jsx` | one labelled number with a hint line, in four tones |
+| `insights/RangeToggle.jsx` | the 3M/6M/1Y/2Y/5Y span selector; drop it in any chart's `action` slot and share one URL value across the page |
+| `screener/ResultsTable.jsx` | ranked contract table; `compact` drops secondary columns onto the row's hover title so two fit side by side, `startRank`/`descending` number a slice from either end |
+| `screener/ReturnCurveChart.jsx` | return against underlying move, with the Tableau 20 palette exported as `TABLEAU_20` |
+| `simulator/PremiumBandsChart.jsx` | premium over time with dispersion bands and the rich/cheap verdict |
+| `ui/slider.jsx` | shadcn slider, **now one thumb per value** — pass two and it is a range slider |
+
+`chartScale.js`'s `niceAxis(low, high, { floorAt })` is the answer whenever an
+axis prints numbers like `−89,947%`: pick the step, place ticks on multiples of
+it, hand recharts both. `floorAt` pins a bound the data cannot cross (0 for a
+premium, −100% for an option's return) so only the top rounds outward.
 
 ## SSH: port 22 is refused on this machine
 
@@ -97,6 +116,17 @@ curl -s https://enea-denkt.github.io/optionsimulator/ -o /tmp/live.html
 JS=$(grep -o 'assets/[^"]*\.js' /tmp/live.html | head -1)
 curl -s "https://enea-denkt.github.io/optionsimulator/$JS" | grep -c '<new-symbol>'
 ```
+
+**The symbol has to be new in *this* change, not merely present.** Grepping for a
+string that the previous bundle already contained reports success against the old
+bundle and the deploy looks finished when Pages has not published yet — this
+happened on 2026-08-25. The bundle filename changing is the other tell: if
+`assets/main-*.js` is the same hash as before the push, nothing has been
+published. Minified output is a poor place to look for a marker, so prefer a
+user-visible string; JSX props survive as `max:500`, comments do not survive at
+all, and identifiers are renamed.
+
+Publishing takes 20-60s in practice, sometimes two or three polls.
 
 ### Rollback
 
@@ -248,8 +278,9 @@ wrong and have already caused bugs:
   again on 2026-08-25. Do not add a per-ticker IV-over-time chart without a real
   source behind it; one was built and removed the same day. See learnings.md.
 * **One binomial pricer serves the whole app**, exported as `americanOptionPrice`
-  from `src/lib/contractScreener.js`. The simulator page, its evolution chart and
-  the finder all import it. Do not add a fourth: a contract that is worth one number on one page and another on the
+  from `src/lib/contractScreener.js`. Every live caller imports it — the simulator
+  page, `EvolutionChart`, `premiumBands` and the finder. The only remaining
+  copies are inside the three unreferenced `* backup.jsx` files. Do not add another: a contract that is worth one number on one page and another on the
   next is worse than either being wrong.
 * **Adjusted series are filtered out** in `normalizeChain`, because the binomial
   model assumes 100 ordinary shares per contract. Adjusted roots end in a *digit*

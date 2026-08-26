@@ -399,6 +399,45 @@ Two smaller things the chart forced:
   — their upside is capped by the strike — and the toggle visibly does nothing on
   one, which is the correct behaviour rather than a bug.
 
+## 11d. A chart and the table beside it must agree to the decimal
+
+Both of this session's new charts report a number that also appears as text
+nearby, and both were quietly off. Neither was visible without going looking.
+
+**A number the table states must be an exact point on the chart's axis.** The
+return chart's grid was 61 evenly spaced points across the range; a +50% view
+fell between two of them, so the nearest drawn point was +50.67% and every line
+sat about a percent away from the row beside it. Fix: force the marked value onto
+the axis as its own point, and draw a dot there.
+
+**Resolution has to match at that point too.** The chart priced with a 60-step
+binomial tree for speed and the table with 100, which was worth another point of
+disagreement. The marked point alone is now priced at full resolution — one extra
+tree per line, invisible in the timings, and the two agree exactly.
+
+**Say which point the table reads.** "Best return 46%" against a line reaching
++80% looks like a contradiction until you notice the axis deliberately runs to
+1.6× the view on both sides. The reference line now says so in words.
+
+The general shape: any figure that appears both as text and as geometry needs the
+geometry to contain the exact text value, at the same precision, and to say where.
+
+## 11e. When a screen returns few rows, say where the rest went
+
+ASST over 330-514 days screens 13 contracts and there is nothing wrong with that:
+the chain lists exactly one expiration in that window, and 72 of the 106 rows it
+does list there are adjusted series that this app excludes everywhere. The page
+showed the 13 and said nothing, which reads as a bug.
+
+Every stage of the funnel is now counted inside `screenContracts` and stated in a
+sentence under the verdict. The lesson generalises past this page: a filter that
+silently removes most of the input is indistinguishable from a broken filter, and
+the count that explains it is nearly free to carry — it is the same loop.
+
+Adjusted contracts needed counting in `normalizeChain` too, since they are dropped
+before the screener ever sees the chain and so can never appear in its funnel. On
+a name like ASST their absence *is* the question a user is asking.
+
 ## 12. Deployment specifics for GitHub Pages
 
 * `base` must match the repo path (`/optionsimulator/`), and the router `basename`
@@ -431,12 +470,24 @@ blanking the whole app — while `vite build` exited 0 and ESLint stayed silent.
 It shipped because the verification for that change tested pure functions that
 had nothing to do with the crash.
 
-The fix was a page-mount pass, now run before every deploy: render each page
-inside a `MemoryRouter` through `renderToString` across a spread of URLs. It was
-proven to have teeth by reinstating the bug and watching it fail. It cannot catch
-layout or interaction, and it cannot see anything that only renders after data
-loads — a table gated on `rows.length > 0`, or Radix content that mounts in a
-portal on open. Those have to be asserted against the built bundle instead.
+The fix at the time was a page-mount pass: render each page inside a
+`MemoryRouter` through `renderToString` across a spread of URLs, proven to have
+teeth by reinstating the bug and watching it fail. **It was never committed — no
+such script exists in this repo, and the claim that it "runs before every deploy"
+was wrong for every deploy after the one that wrote it.** Worth knowing before
+relying on it.
+
+What is actually used now, and what caught real bugs on 2026-08-25 and -26, is
+Playwright against the dev server: navigate each page with the query string that
+sets up the case, then assert on rendered output — `table tbody tr` counts,
+`.recharts-line` counts, axis tick text, the verdict sentence — with
+`pageerror` and `console` collected the whole time. It sees everything the mount
+pass could not: data-gated tables, portal content, axis rounding, and layout
+(measure the table's `boundingBox` against its pane to prove it does not
+overflow). The same script pointed at the live URL is the post-deploy check.
+
+Playwright is not in this repo's dependencies; `npm i playwright` in a scratch
+directory outside the project is enough, and keeps the app's lockfile clean.
 
 ## 14. Deploying the worker (Cloudflare dashboard)
 
@@ -516,6 +567,20 @@ git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-
   repo variable is set is *unknown and not checkable from this machine* — `gh` is
   unauthenticated. Deploys run locally, which does not depend on it.
 * **Feed cadence during market hours is still unmeasured** (§5).
+* **No committed test harness.** Verification is a Playwright script written per
+  session in a scratch directory (§13). Committing a small page-mount or
+  page-render check would make it repeatable; nothing does it today.
+* **Three unreferenced `* backup.jsx` files** — `EvolutionChart backup`,
+  `MetricsSummary backup` and `pages/OptionsSimulator backup` — are compiled into
+  nothing, but each still carries its own copy of the binomial tree. Grep for the
+  pricer and they are what you find. Deleting them is a one-line change nobody
+  has made.
+
+  Counting copies is how the live one in `MetricsSummary.jsx` turned up on
+  2026-08-26: fifty lines of binomial tree that nothing ever called, sitting in a
+  file that only formats numbers. Consolidating on a shared module is what made
+  it visible — the grep that proves the rule holds is also the grep that finds
+  dead code.
 * The stock-return benchmark shares one Y axis with the option's net return. That
   is correct — same units — but when the option returns thousands of percent the
   stock line flattens visually. A log-scale toggle would be the fix if it matters.

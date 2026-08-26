@@ -10,66 +10,6 @@ function payoffAtExpiration(spot, strike, optionType = 'call') {
     : Math.max(strike - spot, 0);
 }
 
-// Binomial Tree Model for American Options
-function calculateAmericanOptionPrice(
-  spotPrice,
-  strikePrice,
-  timeToExpiry,
-  volatility,
-  riskFreeRate,
-  optionType = 'call',
-  steps = 100
-) {
-  const T = timeToExpiry / 365;
-  const v = volatility / 100;
-  const r = riskFreeRate / 100;
-
-  if (T <= 0) {
-    if (optionType === 'call') {
-      return Math.max(spotPrice - strikePrice, 0);
-    } else {
-      return Math.max(strikePrice - spotPrice, 0);
-    }
-  }
-
-  const dt = T / steps;
-  const u = Math.exp(v * Math.sqrt(dt));
-  const d = 1 / u;
-  const p = (Math.exp(r * dt) - d) / (u - d);
-  const discount = Math.exp(-r * dt);
-
-  const stockPrices = new Array(steps + 1);
-  for (let i = 0; i <= steps; i++) {
-    stockPrices[i] = spotPrice * Math.pow(u, steps - i) * Math.pow(d, i);
-  }
-
-  const optionValues = new Array(steps + 1);
-  for (let i = 0; i <= steps; i++) {
-    if (optionType === 'call') {
-      optionValues[i] = Math.max(stockPrices[i] - strikePrice, 0);
-    } else {
-      optionValues[i] = Math.max(strikePrice - stockPrices[i], 0); 
-    }
-  }
-
-  for (let step = steps - 1; step >= 0; step--) {
-    for (let i = 0; i <= step; i++) {
-      const stockPrice = spotPrice * Math.pow(u, step - i) * Math.pow(d, i);
-      const holdValue = discount * (p * optionValues[i] + (1 - p) * optionValues[i + 1]);
-
-      let exerciseValue;
-      if (optionType === 'call') {
-        exerciseValue = Math.max(stockPrice - strikePrice, 0);
-      } else {
-        exerciseValue = Math.max(strikePrice - stockPrice, 0); 
-      }
-
-      optionValues[i] = Math.max(holdValue, exerciseValue);
-    }
-  }
-
-  return optionValues[0];
-}
 
 export default function MetricsSummary({ data, initialValue, premiumPaid, filters }) {
   const { currentPrice, strikePrice, currentIV, expectedIVChange, expectedPriceChange, riskFreeRate, optionType, daysToExpiration, entryPremium } = filters;
