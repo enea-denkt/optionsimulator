@@ -5,7 +5,6 @@ import OptionsFilters from '../components/simulator/OptionsFilters';
 import EvolutionChart from '../components/simulator/EvolutionChart';
 import RichnessMap from '../components/simulator/RichnessMap';
 import DecayCurves from '../components/simulator/DecayCurves';
-import VolDistribution from '../components/simulator/VolDistribution';
 import MetricsSummary from '../components/simulator/MetricsSummary';
 import { Activity, TrendingUp } from 'lucide-react';
 import { useUrlState, asString, asNumber, asNullableNumber, asEnum } from '@/lib/useUrlState';
@@ -211,6 +210,9 @@ export default function OptionsSimulator() {
       ivChangePct: filters.expectedIVChange,
     };
 
+    // The histogram card is gone; the distribution is still measured, because
+    // "faster than this on 50% of the last two years" is the sharpest line in
+    // the verdict and costs one pass over a series already in memory.
     const dist = volDistribution(history, { ivPct: filters.currentIV });
     const benchmarkValue = americanOptionPrice(
       filters.currentPrice, filters.strikePrice, filters.daysToExpiration,
@@ -220,7 +222,6 @@ export default function OptionsSimulator() {
     return {
       grid: richnessGrid(shared),
       curves: decayCurves(shared),
-      dist,
       verdict: premiumVerdict({
         marketPremium: filters.premiumPaid,
         benchmarkValue,
@@ -568,12 +569,6 @@ export default function OptionsSimulator() {
                   benchmarkVolPct={benchmarkVolPct}
                   ivPct={filters.currentIV}
                   optionType={filters.optionType}
-                />
-
-                <VolDistribution
-                  dist={model.dist}
-                  ivPct={filters.currentIV}
-                  ticker={filters.ticker}
                 />
 
                 <EvolutionChart

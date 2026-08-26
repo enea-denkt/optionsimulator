@@ -62,7 +62,6 @@ Shared **components** worth reaching for before writing a new one:
 | `screener/ReturnCurveChart.jsx` | return against underlying move, with the Tableau 20 palette exported as `TABLEAU_20` |
 | `simulator/RichnessMap.jsx` | price x date grid coloured by overpay, with the scenario's path ringed through it |
 | `simulator/DecayCurves.jsx` | premium against price at several times to expiry, at implied and at the benchmark, with an overpay mode |
-| `simulator/VolDistribution.jsx` | histogram of delivered volatility with the implied marked |
 | `ui/slider.jsx` | shadcn slider, **now one thumb per value** — pass two and it is a range slider |
 
 `colorScale.js` carries both ramps: `viridisCss` for magnitude with no natural

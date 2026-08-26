@@ -403,11 +403,18 @@ It is worth writing down why that was argued out of rather than built.
   point above or below the surface" — the literal question — unreliable by eye.
 
 What replaced it: the same grid coloured by *overpay* rather than by value, with
-the scenario's path ringed through it; the textbook family of value-vs-price
-curves drawn twice, at implied and at the benchmark, so the space between them is
-the premium as a shape; and a histogram of every 30-day volatility the stock has
-delivered with a line at what is being paid, which turns the whole question into
-a percentile a person can act on.
+the scenario's path ringed through it, and the textbook family of value-vs-price
+curves drawn twice — at implied and at the benchmark — so the space between them
+is the premium as a shape.
+
+A third chart was built and removed the same day: a histogram of every 30-day
+volatility the stock has delivered, with a line at what is being paid. It was
+correct and it read well, and it still lost its place to the two that carry the
+price and time axes. What survived is its one sentence — "the stock has actually
+moved faster than this on 50% of the last two years" — folded into the verdict,
+where it costs one pass over a series already in memory. `volDistribution` in
+`premiumRichness.js` still computes the whole distribution for that line, and is
+there if the chart is ever wanted back.
 
 ### Two bugs that only show in a difference
 
