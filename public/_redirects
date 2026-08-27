@@ -1,0 +1,11 @@
+# Client-side routing for Cloudflare Pages.
+#
+# The app is a single-page app: /insights and /finder are routes react-router
+# resolves in the browser, not files on disk, so a direct visit or a refresh has
+# to be handed index.html with a 200 rather than a 404. On GitHub Pages the same
+# job is done by copying index.html to 404.html in the build script; this is the
+# Cloudflare equivalent and the two do not conflict.
+#
+# Pages Functions are matched before this file, so /cboe/* still reaches
+# functions/cboe/[[path]].js rather than being swallowed by the catch-all.
+/*    /index.html   200

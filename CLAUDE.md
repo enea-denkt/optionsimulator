@@ -173,6 +173,11 @@ answers in one request whether this is yours to fix, and the answer is often no 
 Pages publishing runs on Actions, so an Actions incident stops deploys dead while
 `gh-pages` sits there looking perfect.
 
+**Wait for Pages to read `operational` before pushing a retry.** Retries issued
+mid-outage are wasted: on 2026-08-26 three of them vanished, and the deploy
+published ninety seconds after a fourth push made once Pages recovered — so the
+jobs queued during the outage were dropped, not delayed.
+
 ```bash
 curl -s https://www.githubstatus.com/api/v2/summary.json \
   | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['status']['description']); \
@@ -237,6 +242,80 @@ printing the one-time code. The user has to run it in their own terminal.
 machine and the right one varies by repo — `enea-denkt` here, others elsewhere.
 The browser flow silently adopts whatever account the browser session holds, and
 HTTPS remotes on this machine default to a different account.
+
+## Hosting on Cloudflare Pages, behind a login
+
+GitHub Pages cannot do what this app now needs. A Pages site stays **publicly
+readable even when its repository is private** — GitHub Pro ($4/mo) buys the
+private repo and nothing else; gating the site itself is GitHub Enterprise Cloud
+only. Cloudflare Pages hosts private repos free and Cloudflare Access puts a real
+login in front, free up to 50 users.
+
+**The repo side is done.** What is left is dashboard work that cannot be scripted
+from here.
+
+### What is already in the repo
+
+| Piece | Why |
+| --- | --- |
+| `functions/cboe/[[path]].js` | the Cboe pass-through, running on the app's **own origin** |
+| `public/_redirects` | client-side routing: `/finder` must be answered with index.html at status 200 |
+| `npm run build:cloudflare` | `VITE_BASE=/ VITE_MARKET_PROXY=/cboe vite build` |
+
+**The proxy is same-origin on purpose, and it is the whole security design.**
+Access gates a *hostname*. With the proxy on `market-proxy.<account>.workers.dev`
+the app would be locked and the data pipe feeding it would still be open to
+anyone with the URL — authenticating the UI while leaving the API open protects
+nothing. Served from `/cboe/*` on the app's own hostname, every data request is
+already authenticated before the function runs: no JWT to verify, no CORS, no
+`Origin` allowlist to forge. Verified in a browser against `wrangler pages dev`:
+all three pages load live data and **every request is same-origin**.
+
+The build variables are baked into the script rather than left to the dashboard,
+because a forgotten `VITE_MARKET_PROXY` is the one failure that builds cleanly
+and breaks production silently.
+
+### Dashboard steps (nobody can do these from a terminal)
+
+1. **Make the repo private** — GitHub → Settings → General → Danger Zone.
+2. **Cloudflare → Workers & Pages → Create → Pages → Connect to Git**, pick the
+   repo. Build command `npm run build:cloudflare`, output directory `dist`.
+   Leave the environment variables empty; the script sets them.
+3. Deploy, and confirm on the `*.pages.dev` URL that a deep link such as
+   `/finder?ticker=MSTR` loads with data before going any further.
+4. **Zero Trust → Access → Applications → Add → Self-hosted.** Point it at the
+   Pages hostname. Add a policy: action Allow, include *Emails* and list them.
+   Login method **One-time PIN** needs no identity provider; Google or GitHub
+   also work.
+5. Set the session duration on that application — that is your "sessions", and
+   Access renews the signed cookie itself. Nothing to build.
+6. **Retire the standalone worker** once nothing points at it. While it exists it
+   is a public, unauthenticated copy of the same data pipe, protected only by its
+   path allowlist and a forgeable `Origin` check.
+
+### Three traps
+
+* **`404.html` shadows `_redirects`.** `npm run build` copies index.html to
+  404.html for GitHub Pages; on Cloudflare that file wins the fallback and every
+  deep route answers **200-with-a-404-status**, which renders fine and is wrong.
+  `build:cloudflare` simply never creates it. Do not use plain `build` there.
+* **`ALLOWED_PATHS` now lives in two files** — `functions/cboe/[[path]].js` and
+  `proxy/cloudflare-worker.js`. They cannot share a module, because the worker is
+  deployed by pasting a single self-contained file into the dashboard. Adding a
+  Cboe endpoint means editing both.
+* **Access gates the origin, not the bundle's contents.** This is a real login,
+  unlike anything bolted into the React app: a static site's JS is a public file,
+  so an in-app login would hide the UI while anyone could download `main-*.js`
+  and run it. Access refuses the file itself.
+
+### Testing it locally
+
+```bash
+npm run build:cloudflare
+npx wrangler pages dev dist --port 8788 --compatibility-date=2026-08-01
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8788/finder            # 200, not 404
+curl -s "http://localhost:8788/cboe/api/global/delayed_quotes/options/MSTR.json" | head -c 80
+```
 
 ## The worker must be redeployed when ALLOWED_PATHS changes
 

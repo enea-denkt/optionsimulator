@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 .env
+# wrangler pages dev scratch state
+.wrangler/

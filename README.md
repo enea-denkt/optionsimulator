@@ -90,6 +90,15 @@ grep -oh 'market-proxy[^"]*workers\.dev' dist/assets/*.js   # must print the URL
 
 Without that variable the build succeeds and the live site's data quietly breaks.
 
+### Moving to Cloudflare Pages
+
+A GitHub Pages site is publicly readable even when its repository is private, so
+it cannot be put behind a login. The repo is ready for Cloudflare Pages instead —
+`npm run build:cloudflare`, a `public/_redirects` for client-side routing, and
+`functions/cboe/[[path]].js`, which serves the market-data pass-through from the
+app's **own origin** so that Cloudflare Access gates the data as well as the UI.
+The remaining steps are dashboard work and are written out in [CLAUDE.md](CLAUDE.md).
+
 A GitHub Actions route exists in `.github/workflows/deploy.yml` and is **manual
 trigger only** (Actions → Deploy to GitHub Pages → Run workflow) so a push can
 never silently replace the live site. It has never been used, and it needs the
