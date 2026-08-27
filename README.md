@@ -34,7 +34,6 @@ Pure, node-testable modules do the analysis:
 | Module | Holds |
 | --- | --- |
 | `src/lib/contractScreener.js` | the pricer, chain-wide scenario ranking, return curves |
-| `src/lib/premiumRichness.js` | overpay against a benchmark volatility, decay curves, the realized-vol distribution |
 | `src/lib/optionAnalytics.js` | smile, term structure, max pain, expected move, realized vol |
 | `src/lib/volatilityHistory.js` | rank and percentile, rolling series, chart range windows |
 | `src/lib/optionComparison.js` | cross-name contract matching and comparison metrics |
@@ -47,10 +46,9 @@ Pure, node-testable modules do the analysis:
 ### Two modelling choices worth knowing before reading a number
 
 **Implied volatility cannot judge itself.** It is extracted from the premium, so
-pricing a contract at its own IV returns its own price, to the cent, always.
-Anywhere this app says a premium is rich or cheap, the reference is a **benchmark
-volatility** — by default the stock's realized volatility, and adjustable — and
-the gap between the two is the volatility risk premium in dollars.
+pricing a contract at its own IV returns its own price, to the cent, always. Any
+rich-or-cheap reading needs an independent reference — the stock's realized
+volatility — and the gap between the two is the volatility risk premium.
 
 **Volatility slides along the smile, it does not stick to the strike.** When a
 scenario moves the underlying, a contract lands at a new moneyness and is repriced

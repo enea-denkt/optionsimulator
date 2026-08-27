@@ -365,6 +365,13 @@ were exactly that — including two in the top twenty.
 
 ## 11c. Saying whether a premium is rich, without arguing in a circle
 
+**None of the charts described here are in the app any more.** Three were built
+over two days — premium bands, then a richness map and a family of decay curves,
+plus a volatility histogram — and all three were removed at the user's request,
+the last two on 2026-08-27. The simulator is back to the heatmap and evolution
+charts it had before. What follows is kept because the reasoning cost more than
+the code did, and because the same questions will be asked again.
+
 **A model cannot tell you the market is wrong when the market told it what to
 think.** Implied volatility is extracted from the premium: price a contract at
 its own IV and the binomial tree hands back the price it started from, to the
@@ -413,8 +420,8 @@ correct and it read well, and it still lost its place to the two that carry the
 price and time axes. What survived is its one sentence — "the stock has actually
 moved faster than this on 50% of the last two years" — folded into the verdict,
 where it costs one pass over a series already in memory. `volDistribution` in
-`premiumRichness.js` still computes the whole distribution for that line, and is
-there if the chart is ever wanted back.
+`premiumRichness.js` computed that distribution, and went with the rest of the
+module when the last two charts were removed. It is one `git revert` away.
 
 ### Two bugs that only show in a difference
 
