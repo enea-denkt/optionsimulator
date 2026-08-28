@@ -156,6 +156,39 @@ const tooltipStyle = `
 `;
 
 
+/**
+ * The band of share prices both the payoff chart and the heatmap are drawn over.
+ *
+ * These used to span from today's price to the predicted price, which fails in
+ * two ways. Predict no move and the two ends are the same number, so there is a
+ * single point to plot: a reviewer set price change to 0% and sent back a
+ * screenshot of an empty chart and a one-row heatmap, reasonably concluding the
+ * page was broken. Predict a fall and the axis stops at today's price, so the
+ * upside — the half you did not predict, and the half that decides how much to
+ * risk — is never drawn at all.
+ *
+ * So the band is centred on today's price and sized by what the option itself
+ * says is possible: one and a half standard deviations of the move implied by
+ * its own volatility over its remaining life, floored at 25% so a quiet name
+ * still gets a readable chart. The prediction is then guaranteed to sit inside
+ * it, with a little air, however extreme it is.
+ */
+function priceBand(currentPrice, expectedPriceChange, currentIV, daysToExpiration) {
+  const target = currentPrice * (1 + expectedPriceChange / 100);
+  if (!(currentPrice > 0)) return { low: 0, high: 0, target };
+
+  const sigma = (Math.max(currentIV, 1) / 100) * Math.sqrt(Math.max(daysToExpiration, 1) / 365);
+  const spread = Math.max(1.5 * sigma, 0.25);
+
+  return {
+    // Lognormal, so the band is symmetric in log space rather than in dollars —
+    // a stock can double more easily than it can fall to nothing.
+    low: Math.max(Math.min(currentPrice * Math.exp(-spread), target * 0.95), 0.01),
+    high: Math.max(currentPrice * Math.exp(spread), target * 1.05),
+    target,
+  };
+}
+
 export default function EvolutionChart({ data, filters, premiumPaid }) {
   const [showReturn, setShowReturn] = useState(true);
 
@@ -187,12 +220,9 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
 
 
 
-    const expectedPrice = currentPrice * (1 + expectedPriceChange / 100);
-    const priceMin = Math.min(currentPrice, expectedPrice);
-    const priceMax = Math.max(currentPrice, expectedPrice);
-    // Ensure at least 2 points if priceMin === priceMax
-    const priceSteps = priceMax === priceMin ? 1 : 20;
-    const priceIncrement = priceMax === priceMin ? 0 : (priceMax - priceMin) / priceSteps;
+    const { low: priceMin, high: priceMax } = priceBand(currentPrice, expectedPriceChange, currentIV, daysToExpiration);
+    const priceSteps = 20;
+    const priceIncrement = (priceMax - priceMin) / priceSteps;
 
     const heatmapData = [];
 
@@ -238,13 +268,12 @@ export default function EvolutionChart({ data, filters, premiumPaid }) {
 
     const expectedIV = currentIV + currentIV * expectedIVChange / 100;
 
-    // Use the same price range logic as the heatmap
-    const expectedPrice = currentPrice * (1 + expectedPriceChange / 100);
-    const priceMin = Math.min(currentPrice, expectedPrice);
-    const priceMax = Math.max(currentPrice, expectedPrice);
-
+    // The same band as the heatmap, so the two charts describe one picture.
+    const { low: priceMin, high: priceMax } = priceBand(
+      currentPrice, expectedPriceChange, currentIV, filters.daysToExpiration,
+    );
     const priceSteps = 50;
-    const priceIncrement = priceMax === priceMin ? 0 : (priceMax - priceMin) / priceSteps;
+    const priceIncrement = (priceMax - priceMin) / priceSteps;
 
     const payoffData = [];
 

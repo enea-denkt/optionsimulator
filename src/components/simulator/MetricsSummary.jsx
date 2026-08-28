@@ -37,8 +37,8 @@ export default function MetricsSummary({ data, initialValue, premiumPaid, filter
   
   // Determine subtitle for net return
   const netReturnSubtitle = entryPremium !== null && entryPremium !== undefined 
-    ? `From Entry Premium of $${entryPremium.toFixed(2)}`
-    : "From Current Premium";
+    ? `At expiration · from entry premium of $${entryPremium.toFixed(2)}`
+    : "At expiration · from current premium";
 
    
 
@@ -77,7 +77,11 @@ export default function MetricsSummary({ data, initialValue, premiumPaid, filter
       // two different quantities look like a move in one. It was also the same
       // number as Expected Net Return next door whenever no entry premium is
       // set, so the row showed one figure twice and mislabelled a copy of it.
-      subtitle: `On expiry day · premium now $${premiumPaid.toFixed(2)}`,
+      // Both terms on the card: "intrinsic value" is what a trader recognises
+      // instantly, "on expiry day" is the part that was missing and caused the
+      // misreading. Intrinsic value exists today too — it is $0.00 for an
+      // out-of-the-money put right now — so the day has to be said out loud.
+      subtitle: `Intrinsic value on expiry day · premium now $${premiumPaid.toFixed(2)}`,
       icon: DollarSign,
       color: premiumChange >= 0 ? "text-emerald-600" : "text-rose-600",
       bgColor: premiumChange >= 0 ? "bg-emerald-100" : "bg-rose-100"
