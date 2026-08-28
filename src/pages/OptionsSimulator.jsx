@@ -209,7 +209,7 @@ export default function OptionsSimulator() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-indigo-600">•</span>
-                    <span><strong>Expected Premium:</strong> Projected option value at expiration under your scenario</span>
+                    <span><strong>Payoff at Expiration:</strong> What the contract is worth on expiry day under your scenario — intrinsic value only, because no time value is left by then. Volatility moves the value <em>before</em> expiry, which is what the Premium Decay chart shows.</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-indigo-600">•</span>
@@ -328,12 +328,11 @@ export default function OptionsSimulator() {
                       {/* Left Column */}
                       <div>
                         <p className="mb-1">
-                          <span className="font-medium">Expected Option Premium:</span>{' '}
+                          <span className="font-medium">Payoff at Expiration:</span>{' '}
                           <span className="font-bold" style={{
                             color: (() => {
-                              const { currentPrice, strikePrice, expectedPriceChange, currentIV, expectedIVChange, riskFreeRate, optionType, premiumPaid } = filters;
+                              const { currentPrice, strikePrice, expectedPriceChange, optionType, premiumPaid } = filters;
                               const expectedStockPrice = currentPrice * (1 + expectedPriceChange / 100);
-                              const expectedIV = Math.max(5, Math.min(500, currentIV + currentIV * expectedIVChange / 100));
                               const expectedPremium = payoffAtExpiration(
                                 expectedStockPrice,
                                 strikePrice,
@@ -345,9 +344,8 @@ export default function OptionsSimulator() {
                             })()
                           }}>
                             {(() => {
-                              const { currentPrice, strikePrice, expectedPriceChange, currentIV, expectedIVChange, riskFreeRate, optionType } = filters;
+                              const { currentPrice, strikePrice, expectedPriceChange, optionType } = filters;
                               const expectedStockPrice = currentPrice * (1 + expectedPriceChange / 100);
-                              const expectedIV = Math.max(5, Math.min(500, currentIV + currentIV * expectedIVChange / 100));
                               const expectedPremium = payoffAtExpiration(
                                 expectedStockPrice,
                                 strikePrice,
@@ -363,9 +361,8 @@ export default function OptionsSimulator() {
                           <span className="font-medium">Expected Option Net Return (%)*:</span>{' '}
                           <span className="font-bold" style={{
                             color: (() => {
-                              const { currentPrice, strikePrice, expectedPriceChange, currentIV, expectedIVChange, riskFreeRate, optionType, premiumPaid, entryPremium } = filters;
+                              const { currentPrice, strikePrice, expectedPriceChange, optionType, premiumPaid, entryPremium } = filters;
                               const expectedStockPrice = currentPrice * (1 + expectedPriceChange / 100);
-                              const expectedIV = Math.max(5, Math.min(500, currentIV + currentIV * expectedIVChange / 100));
                               const expectedPremium = payoffAtExpiration(
                                 expectedStockPrice,
                                 strikePrice,
