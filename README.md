@@ -7,6 +7,10 @@ comes from `src/api/marketData.js`.
 
 Live at <https://enea-denkt.github.io/optionsimulator/>.
 
+Source lives in the private `enea-denkt/platform`. The public
+`enea-denkt/optionsimulator` is kept only because its `gh-pages` branch serves
+that URL; see [CLAUDE.md](CLAUDE.md) for which remote takes what.
+
 ## The pages
 
 | Route | Page | The question it answers |

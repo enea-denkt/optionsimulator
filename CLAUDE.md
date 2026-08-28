@@ -10,8 +10,10 @@ nothing in this file assumes it.
 
 | | |
 | --- | --- |
-| GitHub repo | `enea-denkt/optionsimulator` |
-| Remote name | `enea` |
+| GitHub repo (private, primary) | `enea-denkt/platform` |
+| Remote name | `private` |
+| GitHub repo (public, legacy) | `enea-denkt/optionsimulator` |
+| Legacy remote name | `enea` |
 | Source branch | `main` |
 | **Branch the live site serves** | **`gh-pages`** |
 | Live URL | https://enea-denkt.github.io/optionsimulator/ |
@@ -20,6 +22,31 @@ nothing in this file assumes it.
 **Pushing to `main` does not change the live site.** `main` is source only. The
 site is whatever `gh-pages` contains. These two are updated separately and drift
 apart routinely — always state which one you changed.
+
+### Two repos, and which one to push to
+
+As of 2026-08-28 the source lives in **`enea-denkt/platform`**, private, remote
+`private`. Development goes there.
+
+`enea-denkt/optionsimulator` is public and still exists **only because it serves
+the live site**: `enea-denkt.github.io/optionsimulator/` is its `gh-pages`
+branch, and a link to it has been shared. Making it private would take the site
+down on a free plan, so it stays as it is until the Cloudflare move is done.
+
+Practically that means a deploy still force-pushes `dist` to the *old* repo's
+`gh-pages`, while `main` goes to the new one:
+
+```bash
+git push private main                                    # source
+git push -f ssh://git@ssh.github.com:443/enea-denkt/optionsimulator.git HEAD:gh-pages   # site
+```
+
+Both are pushed over the 443 endpoint for the reason below, and both authenticate
+as `enea-denkt`.
+
+**A private repo protects future work, not past work.** Fifty-one commits were
+public before the split; anyone who cloned still has them. Restricting who can
+*use* the app is the login's job, not the repository's.
 
 ## What the app contains
 
